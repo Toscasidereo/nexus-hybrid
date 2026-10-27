@@ -1,0 +1,15 @@
+# Laboratorio NEXUS (Fases 0 a 4.5B). Python 3.13 o 3.14.
+# MEDIDO en Codespace (informe 2026-10-27): numba, llvmlite, numpy, pandas, pyarrow, psutil.
+numba==0.68.1
+llvmlite==0.50.0
+numpy==2.5.4
+pandas==3.1.0
+pyarrow==26.0.0
+psutil==7.2.2
+# VALIDADO solo en el sandbox de Claude (Python 3.13); NO medido aún en Codespace:
+optuna==5.0.0
+scikit-learn==1.9.1
+threadpoolctl==3.7.0
+matplotlib==3.11.2
+# El extractor (extraxtor_mt5_rangofecha.py) corre en Windows con MetaTrader5; no forma parte del laboratorio:
+#   pip install MetaTrader5

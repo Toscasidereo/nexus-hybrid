@@ -1,0 +1,434 @@
+{
+  "repo": "/home/claude/nexus-hybrid",
+  "escalon": "E3",
+  "hallazgos": [],
+  "evidencia": {
+    "ESCALON": {
+      "F4": "E3",
+      "F45A": "E3",
+      "F45B": "E3"
+    },
+    "versiones": {
+      "F0": "V3.4",
+      "F12": "V2.2",
+      "F4": "V12.0",
+      "F45A": "V12.0",
+      "F45B": "V12.0",
+      "CORE": "1.1.0",
+      "TABLERO": "1.0.0"
+    },
+    "TAG_F4_vs_F45A": {
+      "descripcion": "TAG_ARCHIVOS (Fase 4) vs TAG_ARCHIVOS_FASE4 (4.5A)",
+      "A": "PROD_V12_E3",
+      "B": "PROD_V12_E3",
+      "ok": true
+    },
+    "DIR_SALIDA_A_vs_B": {
+      "descripcion": "DIR_SALIDA 4.5A vs 4.5B",
+      "A": "F45_V12_E3",
+      "B": "F45_V12_E3",
+      "ok": true
+    },
+    "SIMBOLOS_F3_vs_F4": {
+      "descripcion": "LISTA_SIMBOLOS Fase 3 vs Fase 4",
+      "A": [
+        "EURUSDm",
+        "EURJPYm",
+        "EURCADm",
+        "EURAUDm",
+        "EURGBPm",
+        "EURCHFm",
+        "EURNZDm",
+        "GBPUSDm",
+        "GBPAUDm",
+        "GBPNZDm",
+        "GBPCHFm",
+        "GBPCADm",
+        "GBPJPYm",
+        "AUDJPYm",
+        "AUDUSDm",
+        "AUDNZDm",
+        "AUDCADm",
+        "AUDCHFm",
+        "NZDJPYm",
+        "NZDUSDm",
+        "NZDCHFm",
+        "NZDCADm",
+        "USDCADm",
+        "USDJPYm",
+        "USDCHFm",
+        "CADCHFm",
+        "CADJPYm",
+        "CHFJPYm"
+      ],
+      "B": [
+        "EURUSDm",
+        "EURJPYm",
+        "EURCADm",
+        "EURAUDm",
+        "EURGBPm",
+        "EURCHFm",
+        "EURNZDm",
+        "GBPUSDm",
+        "GBPAUDm",
+        "GBPNZDm",
+        "GBPCHFm",
+        "GBPCADm",
+        "GBPJPYm",
+        "AUDJPYm",
+        "AUDUSDm",
+        "AUDNZDm",
+        "AUDCADm",
+        "AUDCHFm",
+        "NZDJPYm",
+        "NZDUSDm",
+        "NZDCHFm",
+        "NZDCADm",
+        "USDCADm",
+        "USDJPYm",
+        "USDCHFm",
+        "CADCHFm",
+        "CADJPYm",
+        "CHFJPYm"
+      ],
+      "ok": true
+    },
+    "SIMBOLOS_F4_vs_F45A": {
+      "descripcion": "LISTA_SIMBOLOS Fase 4 vs 4.5A",
+      "A": [
+        "EURUSDm",
+        "EURJPYm",
+        "EURCADm",
+        "EURAUDm",
+        "EURGBPm",
+        "EURCHFm",
+        "EURNZDm",
+        "GBPUSDm",
+        "GBPAUDm",
+        "GBPNZDm",
+        "GBPCHFm",
+        "GBPCADm",
+        "GBPJPYm",
+        "AUDJPYm",
+        "AUDUSDm",
+        "AUDNZDm",
+        "AUDCADm",
+        "AUDCHFm",
+        "NZDJPYm",
+        "NZDUSDm",
+        "NZDCHFm",
+        "NZDCADm",
+        "USDCADm",
+        "USDJPYm",
+        "USDCHFm",
+        "CADCHFm",
+        "CADJPYm",
+        "CHFJPYm"
+      ],
+      "B": [
+        "EURUSDm",
+        "EURJPYm",
+        "EURCADm",
+        "EURAUDm",
+        "EURGBPm",
+        "EURCHFm",
+        "EURNZDm",
+        "GBPUSDm",
+        "GBPAUDm",
+        "GBPNZDm",
+        "GBPCHFm",
+        "GBPCADm",
+        "GBPJPYm",
+        "AUDJPYm",
+        "AUDUSDm",
+        "AUDNZDm",
+        "AUDCADm",
+        "AUDCHFm",
+        "NZDJPYm",
+        "NZDUSDm",
+        "NZDCHFm",
+        "NZDCADm",
+        "USDCADm",
+        "USDJPYm",
+        "USDCHFm",
+        "CADCHFm",
+        "CADJPYm",
+        "CHFJPYm"
+      ],
+      "ok": true
+    },
+    "SIMBOLOS_sin_spread": [],
+    "SIMBOLOS_EXTRACTOR_vs_F4": {
+      "descripcion": "PARES_BASE+\"m\" (extractor) vs LISTA_SIMBOLOS (como conjunto)",
+      "A": [
+        "AUDCADm",
+        "AUDCHFm",
+        "AUDJPYm",
+        "AUDNZDm",
+        "AUDUSDm",
+        "CADCHFm",
+        "CADJPYm",
+        "CHFJPYm",
+        "EURAUDm",
+        "EURCADm",
+        "EURCHFm",
+        "EURGBPm",
+        "EURJPYm",
+        "EURNZDm",
+        "EURUSDm",
+        "GBPAUDm",
+        "GBPCADm",
+        "GBPCHFm",
+        "GBPJPYm",
+        "GBPNZDm",
+        "GBPUSDm",
+        "NZDCADm",
+        "NZDCHFm",
+        "NZDJPYm",
+        "NZDUSDm",
+        "USDCADm",
+        "USDCHFm",
+        "USDJPYm"
+      ],
+      "B": [
+        "AUDCADm",
+        "AUDCHFm",
+        "AUDJPYm",
+        "AUDNZDm",
+        "AUDUSDm",
+        "CADCHFm",
+        "CADJPYm",
+        "CHFJPYm",
+        "EURAUDm",
+        "EURCADm",
+        "EURCHFm",
+        "EURGBPm",
+        "EURJPYm",
+        "EURNZDm",
+        "EURUSDm",
+        "GBPAUDm",
+        "GBPCADm",
+        "GBPCHFm",
+        "GBPJPYm",
+        "GBPNZDm",
+        "GBPUSDm",
+        "NZDCADm",
+        "NZDCHFm",
+        "NZDJPYm",
+        "NZDUSDm",
+        "USDCADm",
+        "USDCHFm",
+        "USDJPYm"
+      ],
+      "ok": true
+    },
+    "parquet_plantillas": {
+      "F12": [
+        "nexus_df_salida_3D_{*}_MultiZ.parquet"
+      ],
+      "F3": [
+        "nexus_df_salida_3D_{*}_MultiZ.parquet"
+      ],
+      "F4": [
+        "nexus_df_salida_3D_{*}_MultiZ.parquet"
+      ],
+      "F45A": [
+        "nexus_df_salida_3D_{*}_MultiZ.parquet"
+      ]
+    },
+    "csv_fase3": {
+      "escribe_F3": [
+        "Reporte_Fase3_WFO_V5.8_{*}.csv"
+      ],
+      "lee_F4": "Reporte_Fase3_WFO_V5.8_{*}.csv"
+    },
+    "CSV_FASE4_plantilla": {
+      "descripcion": "CSV de Fase 4 (escribe vs lee 4.5A)",
+      "A": "Reporte_OOS_Phase4_{*}_Superv_{*}.csv",
+      "B": "Reporte_OOS_Phase4_{*}_Superv_{*}.csv",
+      "ok": true
+    },
+    "TXT_CEREBRO_plantilla": {
+      "descripcion": ".txt cerebro (escribe F4 vs lee 4.5A)",
+      "A": "Cerebro_MQL5_{*}_{*}.txt",
+      "B": "Cerebro_MQL5_{*}_{*}.txt",
+      "ok": true
+    },
+    "F0_PARQUET_vs_F12": {
+      "descripcion": "Parquet que escribe Fase 0 vs RUTA_PARQUET_ORIGEN de Fase 1&2",
+      "A": "nexus_matrix_ohlc_m1_24m.parquet",
+      "B": "nexus_matrix_ohlc_m1_24m.parquet",
+      "ok": true
+    },
+    "EXTRACTOR_ALIAS_vs_F0": {
+      "descripcion": "NOMBRE_ALIAS_FASE0 (extractor) vs RUTA_CSV (Fase 0)",
+      "A": "nexus_matrix_ohlc_m1_24m.csv.gz",
+      "B": "nexus_matrix_ohlc_m1_24m.csv.gz",
+      "ok": true
+    },
+    "TABLERO_F3_N_FOLDS": "TAB.N_FOLDS",
+    "TABLERO_F3_RATIO_TRAIN_TEST": "TAB.RATIO_TRAIN_TEST",
+    "TABLERO_F3_MEMORIA_FIFO": "TAB.MEMORIA_FIFO",
+    "TABLERO_F4_N_FOLDS": "TAB.N_FOLDS",
+    "TABLERO_F4_RATIO_TRAIN_TEST": "TAB.RATIO_TRAIN_TEST",
+    "TABLERO_F4_MEMORIA_FIFO": "TAB.MEMORIA_FIFO",
+    "TABLERO_F45A_N_FOLDS": "TAB.N_FOLDS",
+    "TABLERO_F45A_RATIO_TRAIN_TEST": "TAB.RATIO_TRAIN_TEST",
+    "TABLERO_F45A_MEMORIA_FIFO": "TAB.MEMORIA_FIFO",
+    "tablero_vigente": {
+      "N_FOLDS": 2,
+      "RATIO_TRAIN_TEST": 2.0,
+      "RESERVA_FINAL": 0.25,
+      "MEMORIA_FIFO": 100,
+      "EXIGIR_SELLO": true
+    },
+    "umbrales_trades_dispersos": [
+      {
+        "archivo": "Fase_3.py",
+        "linea": 191,
+        "nombre": "MIN_OPS_IS_REPORTE",
+        "valor": "50"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 410,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "5"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 561,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "MIN_OPS_IS_REPORTE"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 643,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "MIN_OPS_IS_REPORTE"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 651,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "3"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 689,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "MIN_OPS_IS_REPORTE"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 771,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "MIN_OPS_IS_REPORTE"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 779,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "3"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 244,
+        "nombre": "MIN_OPS_IS_REPORTE",
+        "valor": "50"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 246,
+        "nombre": "MIN_OPS_OOS_EXPORT",
+        "valor": "30"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 274,
+        "nombre": "MIN_OPS_IS_LAB",
+        "valor": "20 if _GATE_T_ACTIVO else MIN_OPS_IS_REPORTE"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 276,
+        "nombre": "MIN_TRADES_SUPERV_IS",
+        "valor": "20 if _GATE_T_ACTIVO else MIN_OPS_IS_REPORTE"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 1121,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "5"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 1393,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "MIN_OPS_IS_LAB"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 1416,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "MIN_OPS_OOS_EXPORT"
+      },
+      {
+        "archivo": "Fase_4_V12_0.py",
+        "linea": 1419,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "3"
+      },
+      {
+        "archivo": "Fase_4_5_V_12_0_A.py",
+        "linea": 87,
+        "nombre": "MIN_OPS_OOS_EXPORT",
+        "valor": "30"
+      },
+      {
+        "archivo": "Fase_4_5_V_12_0_A.py",
+        "linea": 88,
+        "nombre": "MIN_OPS_BASE",
+        "valor": "3"
+      },
+      {
+        "archivo": "Fase_4_5_V_12_0_A.py",
+        "linea": 89,
+        "nombre": "MIN_OPS_MOTOR_PF",
+        "valor": "3"
+      },
+      {
+        "archivo": "Fase_4_5_V_12_0_A.py",
+        "linea": 621,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "5"
+      },
+      {
+        "archivo": "Fase_4_5_V_12_0_A.py",
+        "linea": 662,
+        "nombre": "min_trades (arg de eval_robustez)",
+        "valor": "4"
+      },
+      {
+        "archivo": "Fase_4_5_V_12_0_B.py",
+        "linea": 57,
+        "nombre": "MIN_OPS_PORTAFOLIO",
+        "valor": "100"
+      },
+      {
+        "archivo": "Fase_4_5_V_12_0_B.py",
+        "linea": 59,
+        "nombre": "MIN_BLOQUES_DECAY",
+        "valor": "6"
+      }
+    ],
+    "otras_constantes_decision": {
+      "Q_ADMISION_T": 0.7,
+      "RATIO_CAPTURA_VELOCIDAD": 0.6,
+      "TOLERANCIA_VIDA_MEDIA": 1.5,
+      "N_SIMULACIONES": 5000,
+      "STARTUP_TRIALS": 1000,
+      "TOP_CANDIDATOS": 1000
+    }
+  }
+}

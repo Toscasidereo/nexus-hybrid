@@ -30,7 +30,7 @@ TABLERO_VERSION = "1.0.0"
 # ==============================================================================
 N_FOLDS = 2                 # nº de folds Walk-Forward
 RATIO_TRAIN_TEST = 2.0      # tamaño IS / tamaño OOS dentro de cada fold
-RESERVA_FINAL = 0.0         # fracción final del archivo reservada (ciega). 0.0 = sin reserva (comportamiento histórico)
+RESERVA_FINAL = 0.25        # fracción final del archivo reservada (ciega). 0.0 = sin reserva (comportamiento histórico)
 MEMORIA_FIFO = 100          # memoria de la mediana rodante del saturador (debe ser idéntica en todas las fases)
 EXIGIR_SELLO = True         # True: una fase se niega a seguir si la anterior no estampó sello (poner False SOLO de forma explícita y temporal)
 
