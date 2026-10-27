@@ -25,7 +25,7 @@ Motivo (H-CACHE-01, reproducido en 2 entornos): Numba no invalida el caché de u
 `Fase_3.py` no tiene guarda `__main__`: importarlo ejecuta el trabajo. No lo importes desde otros scripts.
 
 ## 3. Tablero de producción vigente (`nexus_tablero.py`)
-`N_FOLDS=2 · RATIO_TRAIN_TEST=2.0 · RESERVA_FINAL=0.0 · MEMORIA_FIFO=100 · EXIGIR_SELLO=True · ESCALON=E3`.
+`N_FOLDS=2 · RATIO_TRAIN_TEST=2.0 · RESERVA_FINAL=0.25 · MEMORIA_FIFO=100 · EXIGIR_SELLO=True · ESCALON=E3`.
 Verificar contratos entre fases: `python3 auditoria/verificar_tableros.py . --salida auditoria/tablero_produccion.json` (sale con código 1 si hay hallazgo crítico).
 
 ## 4. Pruebas de humo (datos sintéticos, no representan mercado)
@@ -34,5 +34,5 @@ Informe completo de solo lectura: `bash auditoria/correr_codespace.sh`.
 
 ## 5. Estado y decisiones pendientes del CRO
 - **NO VERIFICADO:** ejecución extremo a extremo con los 24 meses reales (Fases 3, 4, 4.5A, 4.5B no se han corrido sobre datos).
-- **RESERVA_FINAL=0.0:** la ventana de 4.5B se solapa con el OOS de Fase 4 (no es evidencia ciega). Cambiarlo invalida los resultados de Fase 3.
-- Los archivos de fase no fueron modificados por esta rama (solo los renombres de `prep/nombres`).
+- **RESERVA_FINAL=0.25 (decisión del CRO):** Fases 3 y 4 usan el 75 % inicial del archivo; el último 25 % queda ciego para 4.5B. Cualquier resultado previo de Fase 3 queda invalidado: hay que volver a correrla. La reserva "se gasta" si se ajusta la configuración mirando el resultado de 4.5B.
+- Esta rama solo cambia `nexus_tablero.py` (RESERVA_FINAL 0.0 → 0.25) respecto de los renombres de `prep/nombres`.

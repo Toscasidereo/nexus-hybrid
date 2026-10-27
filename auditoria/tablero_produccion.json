@@ -1,13 +1,7 @@
 {
   "repo": "/home/claude/nexus-hybrid",
   "escalon": "E3",
-  "hallazgos": [
-    {
-      "severidad": "INFO",
-      "codigo": "VENTANA_NO_CIEGA",
-      "detalle": "RESERVA_FINAL=0.0: la ventana de portafolio de 4.5B se solapa con el OOS de Fase 4 (no es evidencia fuera de muestra). Decisión del CRO."
-    }
-  ],
+  "hallazgos": [],
   "evidencia": {
     "ESCALON": {
       "F4": "E3",
@@ -284,7 +278,7 @@
     "tablero_vigente": {
       "N_FOLDS": 2,
       "RATIO_TRAIN_TEST": 2.0,
-      "RESERVA_FINAL": 0.0,
+      "RESERVA_FINAL": 0.25,
       "MEMORIA_FIFO": 100,
       "EXIGIR_SELLO": true
     },
