@@ -285,51 +285,57 @@
     "umbrales_trades_dispersos": [
       {
         "archivo": "Fase_3.py",
-        "linea": 191,
+        "linea": 206,
         "nombre": "MIN_OPS_IS_REPORTE",
-        "valor": "50"
+        "valor": "200"
       },
       {
         "archivo": "Fase_3.py",
-        "linea": 410,
+        "linea": 207,
+        "nombre": "MIN_OPS_OOS_REPORTE",
+        "valor": "3"
+      },
+      {
+        "archivo": "Fase_3.py",
+        "linea": 433,
         "nombre": "min_trades (arg de eval_robustez)",
         "valor": "5"
       },
       {
         "archivo": "Fase_3.py",
-        "linea": 561,
+        "linea": 584,
         "nombre": "min_trades (arg de eval_robustez)",
         "valor": "MIN_OPS_IS_REPORTE"
       },
       {
         "archivo": "Fase_3.py",
-        "linea": 643,
+        "linea": 666,
         "nombre": "min_trades (arg de eval_robustez)",
         "valor": "MIN_OPS_IS_REPORTE"
       },
       {
         "archivo": "Fase_3.py",
-        "linea": 651,
+        "linea": 674,
         "nombre": "min_trades (arg de eval_robustez)",
-        "valor": "3"
+        "valor": "MIN_OPS_OOS_REPORTE"
       },
       {
         "archivo": "Fase_3.py",
-        "linea": 689,
+        "linea": 712,
         "nombre": "min_trades (arg de eval_robustez)",
         "valor": "MIN_OPS_IS_REPORTE"
       },
       {
         "archivo": "Fase_3.py",
-        "linea": 771,
+        "linea": 794,
         "nombre": "min_trades (arg de eval_robustez)",
         "valor": "MIN_OPS_IS_REPORTE"
       },
       {
         "archivo": "Fase_3.py",
-        "linea": 779,
+        "linea": 802,
         "nombre": "min_trades (arg de eval_robustez)",
-        "valor": "3"
+        "valor": "MIN_OPS_OOS_REPORTE"
       },
       {
         "archivo": "Fase_4_V12_0.py",
@@ -426,8 +432,8 @@
       "Q_ADMISION_T": 0.7,
       "RATIO_CAPTURA_VELOCIDAD": 0.6,
       "TOLERANCIA_VIDA_MEDIA": 1.5,
-      "N_SIMULACIONES": 5000,
-      "STARTUP_TRIALS": 1000,
+      "N_SIMULACIONES": 20000,
+      "STARTUP_TRIALS": 5000,
       "TOP_CANDIDATOS": 1000
     }
   }
