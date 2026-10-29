@@ -26,6 +26,7 @@ Motivo (H-CACHE-01, reproducido en 2 entornos): Numba no invalida el caché de u
 
 ## 3. Tablero de producción vigente (`nexus_tablero.py`)
 `N_FOLDS=2 · RATIO_TRAIN_TEST=2.0 · RESERVA_FINAL=0.25 · MEMORIA_FIFO=100 · EXIGIR_SELLO=True · ESCALON=E3`.
+**Presupuesto de búsqueda de Fase 3 (V5.11):** `MIN_OPS_IS_REPORTE=200 · N_SIMULACIONES=20000 · STARTUP_TRIALS=5000` (bloque `PRESUPUESTO DE BÚSQUEDA` en `Fase_3.py`). Cada CSV lleva columnas `Busq_*` y `Busq_Hash` con el presupuesto usado. `N_SIMULACIONES` cuenta trials completos; los podados no cuentan, pero sí cuentan para `STARTUP_TRIALS`. Tope de evaluados: `N_SIMULACIONES × 20`.
 Verificar contratos entre fases: `python3 auditoria/verificar_tableros.py . --salida auditoria/tablero_produccion.json` (sale con código 1 si hay hallazgo crítico).
 
 ## 4. Pruebas de humo (datos sintéticos, no representan mercado)

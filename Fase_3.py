@@ -1,4 +1,15 @@
 # ==============================================================================
+# 📋 BITÁCORA V5.11 (TRAZABILIDAD DEL PRESUPUESTO DE BÚSQUEDA — REFACTORIZACION FASE_3_PARAMETROS, orden del CRO):
+#    - El presupuesto de búsqueda queda agrupado en UN bloque (PRESUPUESTO DE BÚSQUEDA) y se estampa en el CSV
+#      (columnas Busq_*) junto al sello del tablero: MIN_OPS_IS_REPORTE, MIN_OPS_OOS_REPORTE, N_SIMULACIONES,
+#      STARTUP_TRIALS, TOP_REPORTE, RANGO_ARMADO, RANGO_CHASQUIDO y su hash SHA-1 (Busq_Hash).
+#    - El literal 3 del umbral OOS (antes escrito dos veces en el cuerpo) pasa a la constante MIN_OPS_OOS_REPORTE = 3 (mismo valor).
+#    - Valores fijados por el CRO en esta versión (cambian el comportamiento; los reportes anteriores NO son comparables):
+#        MIN_OPS_IS_REPORTE 50 -> 200 · N_SIMULACIONES 5000 -> 20000 · STARTUP_TRIALS 1000 -> 5000.
+#      El resto de valores del bloque queda igual que en V5.10. Sin ningún otro cambio de lógica.
+#    - Nota: los trials podados cuentan para STARTUP_TRIALS (sampler TPE) pero NO para N_SIMULACIONES (solo completos).
+# ==============================================================================
+# ==============================================================================
 # 📋 BITÁCORA V5.10 (TABLERO ÚNICO — edición programática, ver parche_fase3_tablero.py y Fase_3.tablero.diff):
 #    - N_FOLDS, RATIO_TRAIN_TEST y MEMORIA_FIFO ya NO se definen acá: se importan de nexus_tablero.py (Axioma 3; cierra H-12).
 #    - La geometría de folds (IS/OOS) sale de TAB.geometria(N_total): una sola fórmula para Fase 3, Fase 4 y Fase 4.5.
@@ -171,6 +182,7 @@ from nexus_formulas_core import (
 )
 
 import nexus_tablero as TAB   # [TABLERO] fuente única de folds / IS-OOS / reserva ciega / MEMORIA_FIFO
+import hashlib, json
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 set_num_threads(1)
@@ -188,17 +200,28 @@ LISTA_SIMBOLOS =  ['EURUSDm', 'EURJPYm', 'EURCADm', 'EURAUDm', 'EURGBPm', 'EURCH
                   'USDCADm', 'USDJPYm', 'USDCHFm', 'CADCHFm', 'CADJPYm', 'CHFJPYm']
 
 # 🛡️ GATING Y LIMITES HPC BATCH
-MIN_OPS_IS_REPORTE = 50
+# ------------------------------------------------------------------------------
+# 🔎 PRESUPUESTO DE BÚSQUEDA (V5.11) — se estampa completo en el CSV (columnas Busq_*)
+# ------------------------------------------------------------------------------
+MIN_OPS_IS_REPORTE = 200       # mínimo de operaciones IS: poda en el objetivo de Optuna y filtro del reporte
+MIN_OPS_OOS_REPORTE = 3        # mínimo de operaciones OOS para puntuar (antes literal 3, dos veces)
+N_SIMULACIONES = 20000         # trials COMPLETOS objetivo por (fold, dirección); tope de evaluados = N_SIMULACIONES * 20
+STARTUP_TRIALS = 5000          # trials aleatorios iniciales del TPE (cuentan completos Y podados)
 TOP_REPORTE = 100
-
-N_SIMULACIONES = 5000
-MEMORIA_FIFO = TAB.MEMORIA_FIFO   # [TABLERO] no editar acá: nexus_tablero.py
-STARTUP_TRIALS = 1000
-
 RANGO_ARMADO    = (0.10, 0.98, 0.02)
 RANGO_CHASQUIDO = (0.04, 0.90, 0.02)
+# ------------------------------------------------------------------------------
+MEMORIA_FIFO = TAB.MEMORIA_FIFO   # [TABLERO] no editar acá: nexus_tablero.py
 N_FOLDS = TAB.N_FOLDS   # [TABLERO] no editar acá: nexus_tablero.py
 RATIO_TRAIN_TEST = TAB.RATIO_TRAIN_TEST   # [TABLERO] no editar acá: nexus_tablero.py
+
+def sello_busqueda():
+    """Columnas de trazabilidad del presupuesto de búsqueda (todas las filas del CSV llevan el mismo valor)."""
+    _p = {'min_ops_is': MIN_OPS_IS_REPORTE, 'min_ops_oos': MIN_OPS_OOS_REPORTE, 'n_sim': N_SIMULACIONES,
+          'startup': STARTUP_TRIALS, 'top': TOP_REPORTE, 'r_arm': list(RANGO_ARMADO), 'r_chq': list(RANGO_CHASQUIDO)}
+    _h = hashlib.sha1(json.dumps(_p, sort_keys=True).encode('utf-8')).hexdigest()[:16]
+    return {'Busq_Min_Ops_IS': MIN_OPS_IS_REPORTE, 'Busq_Min_Ops_OOS': MIN_OPS_OOS_REPORTE, 'Busq_N_Sim': N_SIMULACIONES,
+            'Busq_Startup': STARTUP_TRIALS, 'Busq_Top': TOP_REPORTE, 'Busq_Hash': _h}
 
 # 🔥 INYECCIÓN MACRO EXPANDIDA V5.7 (Condiciones Paramétricas 5x3x2 Dimensional)
 FAMILIAS_A_EVALUAR = {
@@ -648,7 +671,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 signos_test[:, idx_out], extremo_test[:, idx_out], sat_sup_test[:, idx_out], acum_test[:, idx_out],
                 opens_test, highs_test, lows_test, phantom_test, PIPS_MULT, TEST_LEN, b_L['armado_in'], b_L['chasquido_in'], b_L['armado_out'], b_L['chasquido_out'], np.float32(SPREAD_ACTIVO)
             )
-            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos = eval_robustez_numba_v6(mfe_L_oos, mae_L_oos, prof_L_oos, tsc_oos, 3)
+            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos = eval_robustez_numba_v6(mfe_L_oos, mae_L_oos, prof_L_oos, tsc_oos, MIN_OPS_OOS_REPORTE)
 
             if score_oos == 0.0:
                 pf_oos_str = "RECHAZADO"; wr_oos_str = "RECHAZADO"; max_dd_oos_str = "RECHAZADO"; rf_oos_str = "RECHAZADO"; mT_oos_str = "RECHAZADO"
@@ -776,7 +799,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 signos_test[:, idx_out], extremo_test[:, idx_out], sat_inf_test[:, idx_out], acum_test[:, idx_out],
                 opens_test, highs_test, lows_test, phantom_test, PIPS_MULT, TEST_LEN, b_S['armado_in'], b_S['chasquido_in'], b_S['armado_out'], b_S['chasquido_out'], np.float32(SPREAD_ACTIVO)
             )
-            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos_S = eval_robustez_numba_v6(mfe_S_oos, mae_S_oos, prof_S_oos, tsc_oos_s, 3)
+            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos_S = eval_robustez_numba_v6(mfe_S_oos, mae_S_oos, prof_S_oos, tsc_oos_s, MIN_OPS_OOS_REPORTE)
 
             if score_oos == 0.0:
                 pf_oos_str = "RECHAZADO"; wr_oos_str = "RECHAZADO"; max_dd_oos_str = "RECHAZADO"; rf_oos_str = "RECHAZADO"; mT_oos_str = "RECHAZADO"
@@ -804,6 +827,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
     if not df_reporte.empty:
         df_reporte = df_reporte.sort_values(by=['Fold', 'Dir', 'Rank'], ascending=[True, True, True])
         for _k, _v in TAB.sello(N_total).items(): df_reporte[_k] = _v   # [TABLERO] sello de trazabilidad (Fase 4 lo verifica)
+        for _k, _v in sello_busqueda().items(): df_reporte[_k] = _v     # [V5.11] presupuesto de búsqueda (trazabilidad)
         # 🛡️ [CONTRATO DE COMPATIBILIDAD FASE 4] Se conserva la convención de
         # nombre 'Reporte_Fase3_WFO_V5.8_{SIMBOLO}.csv' requerida por el pipeline
         # de exportación de Fase 4 (Axioma 2: estabilidad de interfaces inter-fase).
