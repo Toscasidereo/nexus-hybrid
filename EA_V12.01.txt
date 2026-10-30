@@ -6,13 +6,26 @@
 //|         MASTER: ASYNC I/O TELEMETRY ZERO-SLEEP & MEMORY BOUNDS   |
 //|         NEXUS: C1 SATURADOR FIFO + REGLA 5 MAGIC + SAFE INIT     |
 //|         AUDITORÍA: INTEGRACIÓN V12.01 + SSoT V3.3 CERTIFICADO    |
-//|         PARCHE M7 (2026-10-30): H-EA-MAD-01 (orden de devs[] en  |
-//|         CalcRobustZScoreGeneric) + H-EA-TG-01 (contador t_gain/  |
-//|         t_loss con iOpen(1), convención Python Fase 4 l.820-833)|
 //+------------------------------------------------------------------+
 #property copyright "NexusHybrid Event-Driven - Códex V3.01 OOS Inmune"
 #property version   "12.01"
 #property strict
+// ==============================================================================
+// 📋 BITÁCORA V12.02 (Auditoría M7 — paridad MQL5↔Python, parche H-EA-MAD-01 y H-EA-TG-01):
+//    - [H-EA-MAD-01 PARCHADO / CRÍTICA] `CalcRobustZScoreGeneric`: la segunda ordenación
+//      por inserción (`devs[]`) comparaba contra `sorted[j]` en vez de `devs[j]`. El MAD
+//      y el Z robusto salían incorrectos. Ahora: `while(j >= 0 && devs[j] > key)`.
+//      Prueba (sandbox): función real compilada en C++ vs numpy, 300 ventanas:
+//      antes 243 con diferencia (máx 1.55e3), después 0 (máx 0.0).
+//    - [H-EA-TG-01 PARCHADO / MEDIA] Contador `t_gain`/`t_loss` (Toro y Oso) usa el open
+//      de la vela cerrada `iOpen(1)` (Python Fase 4 l.820-833: opens[i]) en vez de
+//      `iOpen(0)`. `profit_apertura` sigue con `iOpen(0)`. Coincide con la convención de
+//      `SincronizarEstadosReales`. Prueba (réplica de 2000 trades): antes 835 conteos
+//      distintos a Python, después 0.
+//    - [NO VERIFICADO] Compilación en MetaEditor y Strategy Tester. El recorrido de
+//      recuperación con `velas_perdidas > 1` en `AnalizarMercado` sigue usando `iOpen(0)`.
+//    - [ABIERTOS, SIN CÓDIGO] H-EA-SPR-01 (Max_Spread_Pips 3.0 vs costo 3.5 de GBPNZDm),
+//      H-EA-SGN-01, H-EA-PREC-01, H-EA-GAT-01.
 // ==============================================================================
 // 📋 BITÁCORA V12.01 (Certificación de Silicio NEXUS-STE — Cierre H-EA-04 y Ratificación H-EA-03):
 //    - [H-EA-04 CERRADO EN SILICIO] Operador `>= 0` adoptado en los ternarios de
