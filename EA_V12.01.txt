@@ -6,6 +6,9 @@
 //|         MASTER: ASYNC I/O TELEMETRY ZERO-SLEEP & MEMORY BOUNDS   |
 //|         NEXUS: C1 SATURADOR FIFO + REGLA 5 MAGIC + SAFE INIT     |
 //|         AUDITORÍA: INTEGRACIÓN V12.01 + SSoT V3.3 CERTIFICADO    |
+//|         PARCHE M7 (2026-10-30): H-EA-MAD-01 (orden de devs[] en  |
+//|         CalcRobustZScoreGeneric) + H-EA-TG-01 (contador t_gain/  |
+//|         t_loss con iOpen(1), convención Python Fase 4 l.820-833)|
 //+------------------------------------------------------------------+
 #property copyright "NexusHybrid Event-Driven - Códex V3.01 OOS Inmune"
 #property version   "12.01"
@@ -422,7 +425,7 @@ double CalcRobustZScoreGeneric(double &hist[], int head, int pz_raw) {
    
    for(int i=1; i<pz; i++) {
        double key = devs[i]; int j = i - 1;
-       while(j >= 0 && sorted[j] > key) { devs[j + 1] = devs[j]; j--; }
+       while(j >= 0 && devs[j] > key) { devs[j + 1] = devs[j]; j--; }
        devs[j + 1] = key;
    }
    
@@ -876,7 +879,8 @@ void AnalizarMercado(datetime target_time) {
           double mfe_actual = (g_pares[i].max_toro - g_pares[i].p_in_toro) * pips_mult;
           double profit_apertura = ((iOpen(s, TF_Accion, 0) - g_pares[i].p_in_toro) * pips_mult) - costo_trx_dinamico;
           
-          if(profit_apertura > 0.0) g_pares[i].t_gain_toro++; else g_pares[i].t_loss_toro++;
+          double prof_cnt_toro = ((iOpen(s, TF_Accion, 1) - g_pares[i].p_in_toro) * pips_mult) - costo_trx_dinamico; // H-EA-TG-01: cuenta el open de la vela cerrada (Python: opens[i])
+          if(prof_cnt_toro > 0.0) g_pares[i].t_gain_toro++; else g_pares[i].t_loss_toro++;
           EmitirResultadoVela(s, "LONG", g_pares[i].ticket_toro, profit_apertura > 0.0); 
           
           double tolerancia_fijada = (g_pares[i].ml_toro.tolerancia_vida > 0.0) ? g_pares[i].ml_toro.tolerancia_vida : 1.5;
@@ -995,7 +999,8 @@ void AnalizarMercado(datetime target_time) {
           double mfe_actual = (g_pares[i].p_in_oso - g_pares[i].min_oso) * pips_mult;
           double profit_apertura = ((g_pares[i].p_in_oso - iOpen(s, TF_Accion, 0)) * pips_mult) - costo_trx_dinamico;
           
-          if(profit_apertura > 0.0) g_pares[i].t_gain_oso++; else g_pares[i].t_loss_oso++;
+          double prof_cnt_oso = ((g_pares[i].p_in_oso - iOpen(s, TF_Accion, 1)) * pips_mult) - costo_trx_dinamico; // H-EA-TG-01: cuenta el open de la vela cerrada (Python: opens[i])
+          if(prof_cnt_oso > 0.0) g_pares[i].t_gain_oso++; else g_pares[i].t_loss_oso++;
           EmitirResultadoVela(s, "SHORT", g_pares[i].ticket_oso, profit_apertura > 0.0); 
           
           double tolerancia_fijada = (g_pares[i].ml_oso.tolerancia_vida > 0.0) ? g_pares[i].ml_oso.tolerancia_vida : 1.5;
