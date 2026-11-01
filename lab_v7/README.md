@@ -13,6 +13,9 @@ Fórmulas: `claude/metricas_score_v7_propuesta.md` (sección 6) del proyecto Aud
 | `v7_metricas.py` | Fusión de ráfagas en señales, alfa (opción A o B), C1 (DSR), C2, C3, C4, `Score_v7`, `T_v2`. Autónomo (numpy, scipy, numba). |
 | `v7_pruebas.py` | Controles sintéticos P1-P7. `python lab_v7/v7_pruebas.py` (~10 s). |
 | `v7_pruebas_resultados.json` | Resultado de la última corrida de los controles. |
+| `Fase_4_lab.py` | Copia de `Fase_4_V12_0.py` con tres interruptores (Ridge de tamaño, Ridge de cierre, gemelo nulo). Apagados = igual que `main`. |
+| `lab_pruebas.py` | Controles L1-L7 de la copia (paridad bit a bit con `main`, sin fuga IS→OOS, targets, grilla de K, interruptores). `python lab_v7/lab_pruebas.py` (~40 s). |
+| `lab_pruebas_resultados.json` | Resultado de la última corrida. |
 
 ## Entrada del módulo
 Por símbolo y ventana: arrays `O, H, L, C` (velas M1 de la ventana evaluada), `pm` (100 JPY, 10 000 resto), `c` (spread en pips) y la tabla de trades del motor: dirección, vela de entrada, vela de salida, neto en pips con spread incluido. `nt` = juegos evaluados por el buscador y `sigma_sr` = desvío del Sharpe entre esos juegos, para el umbral `SR0` del DSR.
@@ -45,6 +48,28 @@ Por símbolo y ventana: arrays `O, H, L, C` (velas M1 de la ventana evaluada), `
 5. Un resultado sin diferencia mayor que el margen se informa como "no concluyente" o "sin efecto mayor que el margen", nunca como "no hay efecto".
 6. Datos: salida de la corrida de producción (VM). Hasta entonces, el laboratorio solo tiene controles sintéticos.
 
+## Fase_4_lab.py: Ridges nuevos, aditivos
+Se ejecuta igual que Fase 4 (mismos insumos: CSV de Fase 3 y parquet de Fase 1&2). Interruptores por variable de entorno:
+
+| Variable | Valores | Qué hace |
+|---|---|---|
+| `NEXUS_LAB_TAMANO` | `off` (defecto), `A`, `B` | **Ridge de tamaño.** `A`: Ridge entrenado en el IS con target MFE (features de Ridge 1 + actividad). `B`: actividad pura. La escala por vela (0.25-4, normalizada por la mediana IS) multiplica `v_req`. |
+| `NEXUS_LAB_CIERRE` | `T_terminal` (defecto), `dT_cont`, `G_pips` | **Ridge de cierre** (Ridge 2) con otro target. `dT_cont` = lo que falta de T. `G_pips` = pips finales menos profit actual. Con target distinto la grilla de K son los percentiles 0-50 de la predicción IS. |
+| `NEXUS_LAB_NULO` | `0` (defecto), `1` | **Gemelo nulo.** Desplaza en círculo la escala dentro de cada ventana y permuta el target de Ridge 2 entre fotos del IS. Con todo en defecto es el gemelo nulo del Ridge 2 de `main`. |
+
+Los archivos de salida llevan el sufijo `_LAB_<tamaño>_<cierre>[_NULO]`: no pisan los de `main`.
+
+**Corridas pareadas por configuración:** (1) `main` o la copia en defecto; (2) el modo a probar; (3) el modo a probar con `NEXUS_LAB_NULO=1`. La mejora cuenta solo si (2) supera a (1) y a (3) sobre los mismos candidatos.
+
+**Límites declarados**
+- `[HECHO VERIFICADO]` Con `escala_v = 1` la copia es idéntica bit a bit a `main` en extractores y simuladores (long y short). Probado en datos sintéticos.
+- `[PENDIENTE / NO VERIFICABLE]` `procesar_candidato` completo no se ejecutó: falta el parquet de Fase 1&2 y el CSV de Fase 3 reales. Las funciones nuevas están probadas aisladas.
+- La actividad usa Σ|ΔOpen| de 60 velas (el parquet no trae Close). La exploración usó Close.
+- Los modos LAB no son exportables al EA: el EA no implementa `escala_v`. No hay paridad M7 para ellos.
+- El gemelo nulo cubre solo estas piezas. Ridge 1 y la Cabeza B no tienen gemelo.
+- Falta `G_acotado` (requiere la actividad de entrada por trade).
+
 ## Pendiente
 - Adaptador que lea la salida de Fase 3 (tabla de trades por caso) y llame a `score_v7` y `t_v2`. Se escribe cuando exista una muestra real de esa salida.
-- Prueba 2 y 3 de T_v2 (contra sustitutos y como target de Ridge).
+- Prueba 2 y 3 de T_v2 (contra sustitutos y como target de Ridge). `T_v2` como target de cierre: agregar un modo a `lab_target_cierre` cuando se decida (H-V7-06 primero).
+- Primera corrida real de `Fase_4_lab.py` en la VM, con las tres corridas pareadas.
