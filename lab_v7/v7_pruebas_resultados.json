@@ -1,0 +1,35 @@
+{
+ "P1_fusion": true,
+ "P2_dsr_formula": true,
+ "P3_control_negativo": {
+  "tasa_C1>=0.95": 0.0,
+  "N_mediano": 351.0,
+  "score_mediano": 0.0,
+  "pasa": true
+ },
+ "P3b_calibracion_sin_spread": {
+  "tasa_C1>=0.95": 0.06666666666666667,
+  "repeticiones": 300,
+  "pasa": true
+ },
+ "P4_control_positivo": {
+  "tasa_C1>=0.95": 1.0,
+  "score_mediano": 83.7805187097208,
+  "pasa": true
+ },
+ "P5_deriva": {
+  "tasa_C1_alfa>=0.95": 0.0,
+  "tasa_DSR_crudo>=0.95": 1.0,
+  "pasa": true
+ },
+ "P6_T_v2_no_mecanico": {
+  "dif_mediana_media": -0.033741366509867685,
+  "pasa": true
+ },
+ "P7_H_V7_06": {
+  "FET_v2": 0.0,
+  "T_v2": 0.0,
+  "anula": true
+ },
+ "todas_pasan": true
+}
