@@ -13,6 +13,12 @@
 #     L5 lab_target_cierre: dT_cont y G_pips con caso armado a mano.
 #     L6 lab_grid_k: T_terminal = grilla de main; otro target = percentiles de x·W_S + B_S.
 #     L7 interruptores: por defecto TAG_ARCHIVOS igual que main; valor inválido falla; modos activos agregan sufijo.
+#   V0.2 (2026-11-04) — EA gemelo. Reglas fijadas antes de correr:
+#     L6 (ajustada): la grilla de K con otro target se redondea a 5 decimales (precisión de export de k_abortar).
+#     L8 contrato de export del Ridge de tamaño: el texto C++ de `lab_bloque_tam` se parsea y una emulación independiente del EA
+#        (bucles escalares de Python, mismo orden de operaciones que el código MQL5 del EA gemelo) reproduce la escala de
+#        `lab_escala_v` IGUAL BIT A BIT en modos A y B, y la actividad `lab_actividad_nb` iguala la suma del EA (desplazamiento 59 → 0).
+#        Con modo 'off' el bloque es vacío (texto idéntico a main).
 #   Uso: python lab_v7/lab_pruebas.py  -> escribe lab_v7/lab_pruebas_resultados.json
 # ==============================================================================
 import os, sys, json, subprocess
@@ -115,7 +121,7 @@ def main():
     # L6
     xt = np.random.default_rng(3).normal(0, 1, (500, 10)); ws = np.random.default_rng(4).normal(0, 1, 10)
     gk = L.lab_grid_k('dT_cont', xt, ws, 0.25)
-    ref = np.unique(np.percentile(xt @ ws + 0.25, np.arange(0, 55, 5)))
+    ref = np.unique(np.round(np.percentile(xt @ ws + 0.25, np.arange(0, 55, 5)), 5))
     out['L6_grilla_K'] = {'n_valores': int(len(gk)), 'pasa': bool(np.allclose(gk, ref) and np.array_equal(L.lab_grid_k('T_terminal', xt, ws, 0.0), M.CANDIDATOS_K_ABORTAR))}
 
     # L7
@@ -126,6 +132,53 @@ def main():
         return r.returncode, r.stdout.strip()
     c0, t0 = tag({}); c1, t1 = tag({'NEXUS_LAB_TAMANO': 'A', 'NEXUS_LAB_CIERRE': 'dT_cont', 'NEXUS_LAB_NULO': '1'}); c2, _ = tag({'NEXUS_LAB_TAMANO': 'Z'})
     out['L7_interruptores'] = {'tag_defecto': t0, 'tag_lab': t1, 'pasa': bool(c0 == 0 and t0 == M.TAG_ARCHIVOS and c1 == 0 and t1.endswith('_LAB_A_dT_cont_NULO') and c2 != 0)}
+
+
+    # L8 contrato de export del Ridge de tamaño + emulación del EA gemelo
+    import re
+    def ea_actividad(op, i, pm):
+        t = 0.0
+        for m in range(59, -1, -1):
+            t += abs(op[i - m] - op[i - m - 1]) * pm
+        return t
+    def ea_escala(tp, xrow, act):
+        a = act / tp['act_med'] if act >= 0.0 else tp['a_is_med']
+        if tp['modo'] == 2:
+            e = a / tp['a_is_med']
+        else:
+            t = 0.0
+            for k in range(11):
+                xk = xrow[k] if k < 10 else a
+                t += tp['w'][k] * ((xk - tp['mu'][k]) / tp['sd'][k])
+            e = (t + tp['intercept']) / tp['med_pred']
+        return min(max(e, tp['esc_min']), tp['esc_max'])
+    def parsear(txt):
+        tp = {'w': [0.0] * 11, 'mu': [0.0] * 11, 'sd': [1.0] * 11}
+        for nom, k, v in re.findall(r'tam_(w|mu|sd)\[(\d+)\]=([-\d.]+);', txt):
+            tp[nom][int(k)] = float(v)
+        for nom, v in re.findall(r'\.tam_(modo|act_med|a_is_med|esc_min|esc_max|intercept|med_pred) = ([-\d.]+);', txt):
+            tp[nom] = int(v) if nom == 'modo' else float(v)
+        return tp
+    gg = np.random.default_rng(21); Nn = 4000
+    op = 1.10 + np.cumsum(gg.normal(0, 0.8, Nn)) / PM
+    ACT = L.lab_actividad_nb(op, PM, 60)
+    t8 = {'act_nan_prefijo': bool(np.isnan(ACT[:59]).all() and np.isfinite(ACT[59:]).all()),
+          'act_igual_EA': bool(all(ACT[i] == ea_actividad(op, i, PM) for i in range(100, Nn, 37)))}
+    idec8 = np.sort(gg.choice(np.arange(120, 1900), 150, replace=False)); X8 = gg.normal(0, 1, (3500 - 100, 10))
+    df8 = pd.DataFrame(X8[idec8 - 100], columns=L.COLS_X_ENTRADA)
+    df8['MFE_Pips'] = 5 + 2 * df8.iloc[:, 0] + np.abs(gg.normal(0, 1, 150)) + 3; df8['Idx_Decision'] = idec8 - 100
+    for modo in ('A', 'B'):
+        par = {}
+        e8 = L.lab_escala_v(modo, False, np.random.default_rng(1), Nn, 100, 2000, 2000, 3500, df8, ACT, X8 if modo == 'A' else None, par)
+        tp = parsear('X' + L.lab_bloque_tam('ml_toro', par))
+        ok_modo = bool(tp.get('modo') == (1 if modo == 'A' else 2))
+        filas = range(100, 3500, 29)
+        iguales = all(e8[i] == ea_escala(tp, X8[i - 100], ACT[i]) for i in filas)
+        t8[f'{modo}_modo_y_parametros'] = ok_modo
+        t8[f'{modo}_escala_igual_bit_a_bit'] = bool(iguales)
+        t8[f'{modo}_rango'] = bool(e8[100:3500].min() >= 0.25 and e8[100:3500].max() <= 4.0)
+    t8['off_bloque_vacio'] = bool(L.lab_bloque_tam('ml_toro', {}) == '' and L.lab_bloque_tam('ml_oso', {'modo': 'off'}) == '')
+    out['L8_export_tamano_y_EA_gemelo'] = {'detalle': t8, 'pasa': all(t8.values())}
 
     out['todas_pasan'] = all(v['pasa'] for k, v in out.items() if isinstance(v, dict) and 'pasa' in v)
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:

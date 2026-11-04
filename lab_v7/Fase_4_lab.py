@@ -3,6 +3,21 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V7 V0.2 (2026-11-04) — EA GEMELO DEL LAB (orden del CRO: "terminar de alinear el EA para que sea gemelo digital de Lab 7"):
+#    El export del Ridge de tamaño pasa a ser ejecutable por el EA gemelo `lab_v7/EA_V12.01_LAB.txt`. Esta entrada reemplaza en
+#    la práctica el aviso ⚠️ de V0.1 (que se conserva abajo como historia) para los modos de TAMAÑO con el EA gemelo.
+#      • Parámetros del Ridge de tamaño redondeados a DEC_W ANTES de calcular la escala (misma regla que W_R): la escala que simula
+#        Python es la que reconstruye el EA desde el texto exportado.
+#      • Escala calculada con kernels @njit secuenciales (`_lab_esc_A_nb`, `_lab_esc_B_nb`), mismo orden de operaciones que el EA.
+#      • `ACT_ARR` pasa de pandas.rolling a suma directa secuencial (`lab_actividad_nb`): mismo orden que el EA (ascendente en la
+#        vela; en el EA, desplazamiento 59 → 0).
+#      • `lab_grid_k` redondea la grilla de K a 5 decimales (el export escribe `k_abortar` con %.5f; con percentiles había desfase).
+#      • `lab_escala_v(..., params_out=None)`: devuelve por diccionario los parámetros exportables; `lab_bloque_tam` los emite como
+#        asignaciones C++ (`tam_modo`, `tam_act_med`, `tam_a_is_med`, `tam_esc_min/max`, y en modo A `tam_intercept`, `tam_med_pred`,
+#        `tam_w[0..10]`, `tam_mu[0..10]`, `tam_sd[0..10]`). Con LAB_TAMANO = off no se emite nada: el texto es idéntico al de main.
+#      • Los modos de CIERRE no necesitan campos nuevos (mismos pesos y `k_abortar`).
+#      • Pendiente: compilar el EA gemelo en MetaEditor; Fase 4.5 (tag por entorno y lectura de `tam_*`); repetir M7 (ver README).
+#
 # 📋 BITÁCORA LAB-V7 V0.1 (2026-11-01) — COPIA DE LABORATORIO PARALELA (rama lab-v7; `main` intacto):
 #    Orden del CRO (2026-11-01): "Refactoriza pero deja el main intacto". Esta copia de Fase_4_V12_0.py agrega tres
 #    interruptores por variable de entorno. Con todos apagados (valores por defecto) el comportamiento es el de main.
@@ -1176,13 +1191,14 @@ def _bloque_mql5(c, export_idx, dir_nombre, cfg, ml, sv, emoji, umbral):
     w_sv = " ".join(f"g_pares[idx].{sv}.w_superv[{k}]={wS[k]:.{DEC_W}f};" for k in range(N_FEAT_SUPERV))
     superv_cfg = f"g_pares[idx].{sv}.inmunidad_velas = {INMUNIDAD_VELAS_EFECTIVA}; g_pares[idx].{sv}.n_features = {N_FEAT_SUPERV};"
 
+    tam_mql = lab_bloque_tam(ml, c.get('TAM'))
     p = DEC_PCT
     return f"""{prefix}      // {emoji} {dir_nombre} SUPERVIVENCIA CONTINUA {FASE4_VERSION} RANK #{export_idx+1} (Fold: {int(row['Fold'])} | Sel_IS: {c['ClaveRank']:.2f} | Flujo: {c['ScoreFlujo']:.1f} | K_Abortar: {kA:.2f} | Vida_IS_Ganadores(atrac_t): {c['atrac_t']:.1f}) | T-Score OOS: {c['Med_T_OOS']:.2f}
       g_pares[idx].cfg.{cfg}.marco_in = {M_in}; g_pares[idx].cfg.{cfg}.res_in = {R_in}; g_pares[idx].cfg.{cfg}.pz_in = {P_in}; g_pares[idx].cfg.{cfg}.base_in = {B_in}; g_pares[idx].cfg.{cfg}.tension_in = {A_in}; g_pares[idx].cfg.{cfg}.armado_in = {arm_in:.{p}f}; g_pares[idx].cfg.{cfg}.chasquido_in = {chq_in:.{p}f};
       g_pares[idx].cfg.{cfg}.marco_out = {M_out}; g_pares[idx].cfg.{cfg}.res_out = {R_out}; g_pares[idx].cfg.{cfg}.pz_out = {P_out}; g_pares[idx].cfg.{cfg}.base_out = {B_out}; g_pares[idx].cfg.{cfg}.tension_out = {A_out}; g_pares[idx].cfg.{cfg}.armado_out = {arm_out:.{p}f}; g_pares[idx].cfg.{cfg}.chasquido_out = {chq_out:.{p}f};
       g_pares[idx].{ml}.activado = true; g_pares[idx].{ml}.umbral = {umbral}; g_pares[idx].{ml}.bias = {bR:.{DEC_W}f}; g_pares[idx].{ml}.mediana_v = {c['med_v']:.{DEC_W}f}; g_pares[idx].{ml}.mad_v = {c['mad_v']:.{DEC_W}f}; g_pares[idx].{ml}.limite_tiempo = {c['atrac_t']:.{DEC_T}f}; g_pares[idx].{ml}.ratio_captura = {RATIO_CAPTURA_VELOCIDAD}; g_pares[idx].{ml}.tolerancia_vida = {TOLERANCIA_VIDA_MEDIA};
       {w_ml}
-      {cabeza_b_mql}
+      {cabeza_b_mql}{tam_mql}
       // 🧠 MOTOR DE SUPERVIVENCIA CONTINUA (superv_toro/oso — compatible EA V12.01+).
       g_pares[idx].{sv}.b_superv = {bS:.{DEC_W}f}; g_pares[idx].{sv}.k_abortar = {kA:.5f}; {superv_cfg}
       {w_sv}{suffix}"""
@@ -1249,37 +1265,116 @@ def _leer_parquet_columnas(archivo, columnas):
 # ==========================================================
 # [LAB-V7] FUNCIONES DE LABORATORIO (módulo; probadas en lab_pruebas.py)
 # ==========================================================
-def lab_escala_v(modo, nulo, rng, N_velas, ini_tr, fin_tr, ini_te, fin_te, df_ml, act_arr, X10):
+@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
+def lab_actividad_nb(opens, pm, ventana):
+    """act[i] = suma ascendente (j = i-ventana+1 .. i) de d[j]; d[j] = |open[j]-open[j-1]|*pm; d[0] = 0. NaN si i < ventana-1.
+    Mismo orden de operaciones que el EA gemelo (LabActividad)."""
+    n = len(opens); d = np.empty(n); d[0] = 0.0
+    for j in range(1, n):
+        d[j] = abs(opens[j] - opens[j - 1]) * pm
+    act = np.full(n, np.nan)
+    for i in range(ventana - 1, n):
+        t = 0.0
+        for j in range(i - ventana + 1, i + 1):
+            t += d[j]
+        act[i] = t
+    return act
+
+
+@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
+def _lab_esc_B_nb(act, act_med, a_is_med, emin, emax):
+    n = len(act); out = np.empty(n)
+    for r in range(n):
+        a = act[r] / act_med
+        if a != a:
+            a = a_is_med
+        e = a / a_is_med
+        if e < emin: e = emin
+        if e > emax: e = emax
+        out[r] = e
+    return out
+
+
+@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
+def _lab_esc_A_nb(X10, act, act_med, a_is_med, coef, inter, mu, sd, med_pred, emin, emax):
+    n = len(act); out = np.empty(n)
+    for r in range(n):
+        a = act[r] / act_med
+        if a != a:
+            a = a_is_med
+        t = 0.0
+        for k in range(11):
+            xk = X10[r, k] if k < 10 else a
+            t += coef[k] * ((xk - mu[k]) / sd[k])
+        e = (t + inter) / med_pred
+        if e < emin: e = emin
+        if e > emax: e = emax
+        out[r] = e
+    return out
+
+
+def lab_escala_v(modo, nulo, rng, N_velas, ini_tr, fin_tr, ini_te, fin_te, df_ml, act_arr, X10, params_out=None):
     """Arreglo float64 de largo N_velas con la escala de v_req por vela de decisión. 'off' => unos (idéntico a main).
-    Solo usa datos IS para ajustar (mediana de actividad, Ridge MFE, normalización). Lanza ValueError(causa) si no es válida."""
+    Solo usa datos IS para ajustar (mediana de actividad, Ridge MFE, normalización). Lanza ValueError(causa) si no es válida.
+    Los parámetros se redondean a DEC_W antes de calcular la escala (los que exporta el EA). params_out (dict) recibe los parámetros."""
     esc_total = np.ones(N_velas, dtype=np.float64)
     if modo == 'off':
         return esc_total
-    act_med = float(np.nanmedian(act_arr[ini_tr:fin_tr]))
+    act_med0 = float(np.nanmedian(act_arr[ini_tr:fin_tr]))
     act_is = act_arr[ini_tr + df_ml['Idx_Decision'].values.astype(np.int64)]
-    if not (act_med > 0.0) or not np.isfinite(act_is).all():
+    if not (act_med0 > 0.0) or not np.isfinite(act_is).all():
+        raise ValueError("Lab_actividad_invalida")
+    act_med = round(act_med0, DEC_W)
+    if not (act_med > 0.0):
         raise ValueError("Lab_actividad_invalida")
     a_is = act_is / act_med
-    a_all = act_arr[ini_tr:fin_te] / act_med
-    a_all = np.where(np.isfinite(a_all), a_all, float(np.median(a_is)))
+    a_is_med = round(float(np.median(a_is)), DEC_W)
+    if not (a_is_med > 0.0):
+        raise ValueError("Lab_actividad_invalida")
+    act_w = np.ascontiguousarray(act_arr[ini_tr:fin_te], dtype=np.float64)
+    par = {'modo': modo, 'act_med': act_med, 'a_is_med': a_is_med}
     if modo == 'B':
-        esc = a_all / float(np.median(a_is))
+        esc = _lab_esc_B_nb(act_w, act_med, a_is_med, ESCALA_MIN, ESCALA_MAX)
     else:
         Xi = np.c_[df_ml[COLS_X_ENTRADA].values.astype(np.float64), a_is]
         Xs_i, mu_i, sd_i = _estandarizar(Xi)
         mod_m = RidgeCV(alphas=ALPHAS_RIDGE, cv=None); mod_m.fit(Xs_i, df_ml['MFE_Pips'].values.astype(np.float64))
-        med_pred = float(np.median(mod_m.predict(Xs_i)))
+        med_pred = round(float(np.median(mod_m.predict(Xs_i))), DEC_W)
         if not (med_pred > 0.0):
             raise ValueError("Lab_MFE_mediana_no_positiva")
-        esc = mod_m.predict((np.c_[X10, a_all] - mu_i) / sd_i) / med_pred
+        coef = np.round(np.asarray(mod_m.coef_, dtype=np.float64), DEC_W); inter = round(float(mod_m.intercept_), DEC_W)
+        mu_r = np.round(np.asarray(mu_i, dtype=np.float64), DEC_W); sd_r = np.round(np.asarray(sd_i, dtype=np.float64), DEC_W)
+        if not (sd_r > 0.0).all():
+            raise ValueError("Lab_sd_nula")
+        esc = _lab_esc_A_nb(np.ascontiguousarray(X10, dtype=np.float64), act_w, act_med, a_is_med, coef, inter, mu_r, sd_r, med_pred,
+                            ESCALA_MIN, ESCALA_MAX)
+        par.update({'coef': coef, 'intercept': inter, 'mu': mu_r, 'sd': sd_r, 'med_pred': med_pred})
     if not np.isfinite(esc).all():
         raise ValueError("Lab_escala_no_finita")
-    esc_total[ini_tr:fin_te] = np.clip(esc, ESCALA_MIN, ESCALA_MAX)
+    esc_total[ini_tr:fin_te] = esc
     if nulo:
         for _a, _b in ((ini_tr, fin_tr), (ini_te, fin_te)):
             _L = _b - _a; _sh = int(rng.integers(int(0.1 * _L), int(0.9 * _L) + 1))
             esc_total[_a:_b] = np.roll(esc_total[_a:_b], _sh)
+    if params_out is not None:
+        params_out.clear(); params_out.update(par)
     return esc_total
+
+
+def lab_bloque_tam(ml, tam):
+    """Texto C++ con los parámetros del Ridge de tamaño para el EA gemelo. Vacío si no hay modo de tamaño (texto idéntico a main)."""
+    if not tam or tam.get('modo', 'off') == 'off':
+        return ""
+    p = f"g_pares[idx].{ml}."
+    modo = 1 if tam['modo'] == 'A' else 2
+    t = (f"\n      // 📐 [LAB-V7] RIDGE DE TAMAÑO (modo {tam['modo']}): v_req = v_req * escala (clip {ESCALA_MIN}-{ESCALA_MAX}). Solo EA gemelo.\n      "
+         f"{p}tam_modo = {modo}; {p}tam_act_med = {tam['act_med']:.{DEC_W}f}; {p}tam_a_is_med = {tam['a_is_med']:.{DEC_W}f}; "
+         f"{p}tam_esc_min = {ESCALA_MIN}; {p}tam_esc_max = {ESCALA_MAX};")
+    if modo == 1:
+        t += f" {p}tam_intercept = {tam['intercept']:.{DEC_W}f}; {p}tam_med_pred = {tam['med_pred']:.{DEC_W}f};"
+        for nombre, v in (('tam_w', tam['coef']), ('tam_mu', tam['mu']), ('tam_sd', tam['sd'])):
+            t += "\n      " + " ".join(f"{p}{nombre}[{k}]={v[k]:.{DEC_W}f};" for k in range(11))
+    return t
 
 
 def lab_target_cierre(modo, y_target, tsc_snap, prof_snap, tid_snap):
@@ -1298,7 +1393,7 @@ def lab_grid_k(modo, x_traj, W_S, B_S):
     if modo == 'T_terminal':
         return CANDIDATOS_K_ABORTAR
     pred = x_traj[:, :N_FEAT_SUPERV].astype(np.float64) @ W_S[:N_FEAT_SUPERV] + B_S
-    return np.unique(np.percentile(pred, PERCENTILES_K_LAB)).astype(np.float64)
+    return np.unique(np.round(np.percentile(pred, PERCENTILES_K_LAB), 5)).astype(np.float64)   # 5 decimales = precisión de export (k_abortar %.5f)
 
 
 def procesar_simbolo(SIMBOLO):
@@ -1358,7 +1453,7 @@ def procesar_simbolo(SIMBOLO):
     opens_arr = df_map['OpenM1'].to_numpy(dtype=np.float64, copy=True)
     highs_arr = df_map['HighM1'].to_numpy(dtype=np.float64, copy=True)
     lows_arr = df_map['LowM1'].to_numpy(dtype=np.float64, copy=True)
-    ACT_ARR = pd.Series(np.r_[0.0, np.abs(np.diff(opens_arr))] * PIPS_MULT).rolling(ACT_VENTANA).sum().to_numpy()   # [LAB-V7] NaN en las primeras 59 velas
+    ACT_ARR = lab_actividad_nb(opens_arr, PIPS_MULT, ACT_VENTANA)   # [LAB-V7] suma directa secuencial (paridad con el EA gemelo); NaN en las primeras 59 velas
 
     ARR = {c: df_map[c].to_numpy(dtype=np.float32, copy=True) for c in df_map.columns if c not in ('OpenM1', 'HighM1', 'LowM1', 'Phantom')}
     del df_map; gc.collect()
@@ -1474,8 +1569,9 @@ def procesar_simbolo(SIMBOLO):
                     X10 = np.column_stack([zbi, viv, via, np.sin(np.arctan2(viv.astype(np.float64), zbi.astype(np.float64))),
                                            zbo, vov, voa, np.sin(np.arctan2(vov.astype(np.float64), zbo.astype(np.float64))),
                                            zm1, zm2])[start_train:end_test].astype(np.float64)
+                PAR_TAM = {}
                 try:
-                    ESC = lab_escala_v(LAB_TAMANO, LAB_NULO, rng_lab, N_velas, start_train, end_train, start_test, end_test, df_ml, ACT_ARR, X10)
+                    ESC = lab_escala_v(LAB_TAMANO, LAB_NULO, rng_lab, N_velas, start_train, end_train, start_test, end_test, df_ml, ACT_ARR, X10, PAR_TAM)
                 except ValueError as e_lab:
                     return desc(str(e_lab))
 
@@ -1533,7 +1629,7 @@ def procesar_simbolo(SIMBOLO):
 
                 if score_flujo > 0 and trades_superv >= MIN_OPS_OOS_EXPORT:
                     return {
-                        'row': row, 'W_R': W_R, 'B_R': B_R, 'med_v': med_v, 'mad_v': mad_v, 'atrac_t': atrac_t,
+                        'row': row, 'TAM': PAR_TAM, 'W_R': W_R, 'B_R': B_R, 'med_v': med_v, 'mad_v': mad_v, 'atrac_t': atrac_t,
                         'W_S': W_S, 'B_S': B_S, 'K_opt': K_opt, 'ScoreK_IS': score_k_is,
                         'ClaveRank': clave_rank,
                         'ScoreFlujo': score_flujo, 'Retencion': retencion * 100, 'Retencion_Raw': retencion_raw * 100,

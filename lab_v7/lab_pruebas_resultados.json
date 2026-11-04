@@ -62,5 +62,19 @@
   "tag_lab": "PROD_V12_E3_LAB_A_dT_cont_NULO",
   "pasa": true
  },
+ "L8_export_tamano_y_EA_gemelo": {
+  "detalle": {
+   "act_nan_prefijo": true,
+   "act_igual_EA": true,
+   "A_modo_y_parametros": true,
+   "A_escala_igual_bit_a_bit": true,
+   "A_rango": true,
+   "B_modo_y_parametros": true,
+   "B_escala_igual_bit_a_bit": true,
+   "B_rango": true,
+   "off_bloque_vacio": true
+  },
+  "pasa": true
+ },
  "todas_pasan": true
 }

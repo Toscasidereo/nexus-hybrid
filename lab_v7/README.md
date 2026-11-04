@@ -14,8 +14,9 @@ Fórmulas: `claude/metricas_score_v7_propuesta.md` (sección 6) del proyecto Aud
 | `v7_pruebas.py` | Controles sintéticos P1-P7. `python lab_v7/v7_pruebas.py` (~10 s). |
 | `v7_pruebas_resultados.json` | Resultado de la última corrida de los controles. |
 | `Fase_4_lab.py` | Copia de `Fase_4_V12_0.py` con tres interruptores (Ridge de tamaño, Ridge de cierre, gemelo nulo). Apagados = igual que `main`. |
-| `lab_pruebas.py` | Controles L1-L7 de la copia (paridad bit a bit con `main`, sin fuga IS→OOS, targets, grilla de K, interruptores). `python lab_v7/lab_pruebas.py` (~40 s). |
+| `lab_pruebas.py` | Controles L1-L8 de la copia (paridad bit a bit con `main`, sin fuga IS→OOS, targets, grilla de K, interruptores, **L8: el texto exportado del Ridge de tamaño, leído por una emulación escalar del EA, reproduce la escala del lab igual bit a bit**). `python lab_v7/lab_pruebas.py` (~40 s). |
 | `lab_pruebas_resultados.json` | Resultado de la última corrida. |
+| `EA_V12.01_LAB.txt` | **EA gemelo.** Copia de `EA_V12.01.txt` (el original no se toca; solo se agregaron líneas) con el Ridge de tamaño del lab (`tam_*`, `LabActividad`, `LabEscalaTamano`). Con `tam_modo = 0` se comporta como V12.01. |
 
 ## Entrada del módulo
 Por símbolo y ventana: arrays `O, H, L, C` (velas M1 de la ventana evaluada), `pm` (100 JPY, 10 000 resto), `c` (spread en pips) y la tabla de trades del motor: dirección, vela de entrada, vela de salida, neto en pips con spread incluido. `nt` = juegos evaluados por el buscador y `sigma_sr` = desvío del Sharpe entre esos juegos, para el umbral `SR0` del DSR.
@@ -65,7 +66,10 @@ Los archivos de salida llevan el sufijo `_LAB_<tamaño>_<cierre>[_NULO]`: no pis
 - `[HECHO VERIFICADO]` Con `escala_v = 1` la copia es idéntica bit a bit a `main` en extractores y simuladores (long y short). Probado en datos sintéticos.
 - `[PENDIENTE / NO VERIFICABLE]` `procesar_candidato` completo no se ejecutó: falta el parquet de Fase 1&2 y el CSV de Fase 3 reales. Las funciones nuevas están probadas aisladas.
 - La actividad usa Σ|ΔOpen| de 60 velas (el parquet no trae Close). La exploración usó Close.
-- Los modos LAB no son exportables al EA: el EA no implementa `escala_v`. No hay paridad M7 para ellos.
+- **EA gemelo (2026-11-04):** los modos de TAMAÑO (A y B) se exportan con campos `tam_*` y los ejecuta `EA_V12.01_LAB.txt`. Los modos de CIERRE (`dT_cont`, `G_pips`) usan los mismos campos de Ridge 2 y `k_abortar`: no requieren cambios del EA. `[PENDIENTE / NO VERIFICABLE]`: compilación en MetaEditor y paridad M7 contra Python (no hay compilador MQL5 en el entorno de trabajo).
+- La escala por vela se calcula con parámetros redondeados a 8 decimales y sumas secuenciales (no `pandas.rolling`), para que Python y EA hagan las mismas operaciones. Sin historia suficiente (menos de 61 velas) el EA usa escala neutra del modo.
+- Los nulos (`NEXUS_LAB_NULO`) no se exportan al EA: son controles de Python.
+- La grilla de K de los modos de cierre se redondea a 5 decimales (el export escribe `k_abortar` con %.5f).
 - El gemelo nulo cubre solo estas piezas. Ridge 1 y la Cabeza B no tienen gemelo.
 - Falta `G_acotado` (requiere la actividad de entrada por trade).
 
@@ -73,3 +77,5 @@ Los archivos de salida llevan el sufijo `_LAB_<tamaño>_<cierre>[_NULO]`: no pis
 - Adaptador que lea la salida de Fase 3 (tabla de trades por caso) y llame a `score_v7` y `t_v2`. Se escribe cuando exista una muestra real de esa salida.
 - Prueba 2 y 3 de T_v2 (contra sustitutos y como target de Ridge). `T_v2` como target de cierre: agregar un modo a `lab_target_cierre` cuando se decida (H-V7-06 primero).
 - Primera corrida real de `Fase_4_lab.py` en la VM, con las tres corridas pareadas.
+- **Fase 4.5** (`Fase_4_5_V_12_0_A/B.py`): lee el tag fijo `PROD_V12_{ESCALON}` y no conoce `tam_*`; para verificar un cerebro del lab hace falta (a) tag por variable de entorno y (b) lectura de `tam_*` con la escala calculada igual que el EA. Requiere `LUZ VERDE: REFACTORIZACION FASE_4_5`.
+- Compilar `EA_V12.01_LAB.txt` en MetaEditor y repetir M7 con un cerebro de modo A y otro de modo B.

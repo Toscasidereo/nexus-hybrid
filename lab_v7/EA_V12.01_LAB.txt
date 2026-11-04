@@ -1,0 +1,1320 @@
+//+------------------------------------------------------------------+
+//|       NexusHybrid V12.01 - DUAL CONTINUOUS RIDGE ML CORE         |
+//|         ARQUITECTURA: 4D S.A.R. FLIP-FLOP (HEDGING ASIMÉTRICO)   |
+//|         NÚCLEO: DEEP BOOT, RIDGE DUAL (V+T) & SUPERV. CONTINUA   |
+//|         C-PY: AXIOMA 7 & 8 / KERNEL FIX OOS HISTORY / SAFE I/O   |
+//|         MASTER: ASYNC I/O TELEMETRY ZERO-SLEEP & MEMORY BOUNDS   |
+//|         NEXUS: C1 SATURADOR FIFO + REGLA 5 MAGIC + SAFE INIT     |
+//|         AUDITORÍA: INTEGRACIÓN V12.01 + SSoT V3.3 CERTIFICADO    |
+//+------------------------------------------------------------------+
+#property copyright "NexusHybrid Event-Driven - Códex V3.01 OOS Inmune"
+#property version   "12.01"
+#property strict
+// ==============================================================================
+// 📋 BITÁCORA LAB-V7 EA GEMELO (2026-11-04) — copia de EA_V12.01.txt; el EA original NO se modifica.
+//    Orden del CRO: "terminar de alinear el EA para que sea gemelo digital de Lab 7".
+//    - `CerebroML` incorpora el Ridge de TAMAÑO del lab (campos `tam_*`). `tam_modo`: 0 = apagado (comportamiento V12.01),
+//      1 = modo A (Ridge sobre los 10 features + actividad), 2 = modo B (actividad pura).
+//    - `LabActividad`: act = Σ|ΔOpen| de 60 velas M1 hasta la vela cerrada (shift 1 en tiempo real, igual que `iOpen(1)` de H-EA-TG-01), en pips, sumando de la vela más
+//      antigua a la más reciente (desplazamiento 59 → 0). Igual que `lab_actividad_nb` (Fase_4_lab.py).
+//    - `LabEscalaTamano`: escala = clip(modelo, tam_esc_min, tam_esc_max). Orden de operaciones idéntico a `_lab_esc_A_nb` y
+//      `_lab_esc_B_nb`. `vreq_calc` se multiplica por la escala DESPUÉS de `ratio_captura` (Python: `v_req*escala_v[i]`).
+//    - Los modos de CIERRE del lab (`dT_cont`, `G_pips`) no requieren cambios: mismos pesos `w_superv` y `k_abortar`.
+//    - Si no hay historia suficiente (iOpen <= 0) la actividad vale -1 y se usa `tam_a_is_med` (Python: NaN → mediana IS).
+//    - Estado: [PENDIENTE / NO VERIFICABLE] compilación en MetaEditor y paridad M7 con Python (Fase 4.5 aún no lee `tam_*`).
+// ==============================================================================
+// ==============================================================================
+// 📋 BITÁCORA V12.02 (Auditoría M7 — paridad MQL5↔Python, parche H-EA-MAD-01 y H-EA-TG-01):
+//    - [H-EA-MAD-01 PARCHADO / CRÍTICA] `CalcRobustZScoreGeneric`: la segunda ordenación
+//      por inserción (`devs[]`) comparaba contra `sorted[j]` en vez de `devs[j]`. El MAD
+//      y el Z robusto salían incorrectos. Ahora: `while(j >= 0 && devs[j] > key)`.
+//      Prueba (sandbox): función real compilada en C++ vs numpy, 300 ventanas:
+//      antes 243 con diferencia (máx 1.55e3), después 0 (máx 0.0).
+//    - [H-EA-TG-01 PARCHADO / MEDIA] Contador `t_gain`/`t_loss` (Toro y Oso) usa el open
+//      de la vela cerrada `iOpen(1)` (Python Fase 4 l.820-833: opens[i]) en vez de
+//      `iOpen(0)`. `profit_apertura` sigue con `iOpen(0)`. Coincide con la convención de
+//      `SincronizarEstadosReales`. Prueba (réplica de 2000 trades): antes 835 conteos
+//      distintos a Python, después 0.
+//    - [NO VERIFICADO] Compilación en MetaEditor y Strategy Tester. El recorrido de
+//      recuperación con `velas_perdidas > 1` en `AnalizarMercado` sigue usando `iOpen(0)`.
+//    - [ABIERTOS, SIN CÓDIGO] H-EA-SPR-01 (Max_Spread_Pips 3.0 vs costo 3.5 de GBPNZDm),
+//      H-EA-SGN-01, H-EA-PREC-01, H-EA-GAT-01.
+// ==============================================================================
+// 📋 BITÁCORA V12.01 (Certificación de Silicio NEXUS-STE — Cierre H-EA-04 y Ratificación H-EA-03):
+//    - [H-EA-04 CERRADO EN SILICIO] Operador `>= 0` adoptado en los ternarios de
+//      inmunidad de Toro (Línea 524) y Oso (Línea 612):
+//      `int inm = (inmunidad_velas >= 0) ? inmunidad_velas : 2;`.
+//      Permite configurar legítimamente `inmunidad_velas = 0` para emular de forma
+//      idéntica la línea base histórica E0 sin que el ternario fuerce el fallback a 2.
+//    - [H-EA-03 RATIFICADO] Verificado en código que el motor Oso lee de forma
+//      independiente `g_pares[i].superv_oso.inmunidad_velas` (sin contaminación de Toro).
+// ==============================================================================
+// 📋 BITÁCORA V12.00 (Arquitectura SSoT V3.2 — Cierre H-EA-01, H-M7-01 y Escalones E1..E3):
+//    - [H-EA-01 CERRADO] Guarda dura anti-asfixia `velas_abiertas > inmunidad_velas`
+//      (por defecto 2) en aborto por Ridge 2. Protege el retesteo inicial y el spread.
+//    - [H-M7-01 CERRADO / CABEZA B] `struct CerebroML` incorpora Cabeza B (calidad
+//      terminal OOF): `w_T[10]`, `bias_T`, `t_min_admision`, `cabeza_t_activa`. Evalúa
+//      T_raw >= T_min al tick 0 de apertura antes de admitir cualquier orden.
+//    - [H-M7-01 CERRADO / RIDGE 2 EXTENDIDO] `struct CerebroSuperv` expande `w_superv`
+//      a 10 pesos (`n_features=10`). Incorpora cálculo dinámico de ΔT = clip(T_obs-T_hat0,-1,1)
+//      y ΔT·Θ con tracking de t_gain/t_loss y función nativa `CalcularTScoreTrade`.
+//    - [PERSISTENCIA VPS] T_hat0 se persiste en Variable Global del terminal (`NX_T0_`)
+//      por ticket para sobrevivir caídas de VPS o reinicios.
+//    - [COMPATIBILIDAD RETROACTIVA TOTAL] Si `cabeza_t_activa == false` y `n_features == 8`,
+//      el motor reproduce exactamente la línea base E0 / V11.83 sin alterar pesos históricos.
+// ==============================================================================
+// 📋 BITÁCORA V11.83 (consolidación — decisiones CRO sobre H-15 / H-12):
+//    - [H-15 CERRADO] `EncolarCierresPorMagic` recupera el filtro doble
+//      `POSITION_SYMBOL == simbolo && POSITION_MAGIC == magic`. V11.82 lo había
+//      eliminado sin declararlo (regresión): el bucle recorre el libro global de
+//      la cuenta y, sin filtro, podía encolar cierres de otros símbolos/gemelo
+//      opuesto. Decisión CRO: NO intencional; filtro blindado (Axioma 5).
+//    - [H-12 RATIFICADO] La condición `v_req_* > 0.0` del Smart Trailing es
+//      INTENCIONAL: centinela ante reinicio de VPS / pérdida de GV `NX_V_`
+//      (v_req==0 => no activar trailing por accidente). Python no la replica
+//      porque con Z_pred>=0 y mediana_v>0, v_req es siempre >0 (equivalentes).
+//    - Fid unificada (H-32/H-11) y `mad_v + 1e-9` (H-13): sin cambios vs V11.82.
+// ==============================================================================
+// 📋 BITÁCORA V11.82 (paridad Python V10.0↔EA — cierre definitivo H-32 / H-11 y H-13):
+//    - [H-32 / H-11 CERRADO EN CÓDIGO] Fidelidad (Fid) unificada con Fase 4 V10.0:
+//      V_z ya no utiliza la fórmula obsoleta `profit_apertura / v_ef`. Ahora
+//      calcula la velocidad del snapshot con la MISMA fórmula cinemática V_cruda
+//      del Ridge de entrada, integrando la envolvente completa de trayectoria:
+//        bruto = profit_apertura + costo_trx_dinamico;
+//        m_mfe = MathMax(mfe_actual, bruto);
+//        m_mae = MathMin(mae_previo, bruto);
+//        v_cruda = (m_mfe - MathAbs(m_mae)) / (v_ef * (1.0 + (MathAbs(m_mae) / 10.0)));
+//        V_z = (v_cruda - mediana_v) / (mad_v + 1e-9);
+//        Fid = (MathTanh(V_z - z_pred) + 1.0) / 2.0;
+//      Se erradica el sesgo sistemático de ≈ -1.0 MAD en Feature 0 (Fid) y en
+//      Feature 7 (Fid*D_), restaurando la paridad con los pesos W_S y el umbral K.
+//    - [H-13 CERRADO EN CÓDIGO] Denominador de V_z alineado con `mad_v + 1e-9`.
+// ==============================================================================
+// 📋 BITÁCORA V11.81 (paridad Python↔EA — hallazgos N4-A1 / N4-A2 de la auditoría):
+//    - [N4-A1 CERRADO EN CÓDIGO] `D_` y `C_` (toro y oso) usan el denominador
+//      `mad_v * v_ef + 1e-9`, idéntico a Fase_4 (extractor y simuladores). Antes
+//      omitían `* v_ef` (v_ef >= 3): 4 de las 8 features (D_, C_, Theta*D_,
+//      Fid*D_) salían en otra escala que la del entrenamiento del Ridge.
+//    - [N4-A2 CERRADO EN CÓDIGO] `max/min` del trade se actualizan con la vela
+//      cerrada evaluada (`shift_base`, = shift 1 en tiempo real), no con la vela 0
+//      recién abierta (1 tick). Paridad con Python highs[i]/lows[i].
+// ==============================================================================
+// 📋 BITÁCORA DE CONSOLIDACIÓN V11.80 (Reescritura Causal Fase 4):
+//    - [MIGRACIÓN PURA RIDGE CERRADA]: Eliminación histórica y sistemática
+//      de todo el ecosistema probabilístico Hazard Logit Discreto ("Hund" & "Prem").
+//    - [MATRIX SUPERV. CONTINUA 9.4 APLICADA]: Nueva subestructura `CerebroSuperv`
+//      diseñada para consumir pasivamente los coeficientes `w_superv` / `b_superv`.
+//    - [T7-H1 EVOLUCIÓN CERRADA] `ValidarSanidadConfiguracion` verifica pesos lineales base.
+// ==============================================================================
+
+#include <Trade\Trade.mqh>
+#include <Trade\PositionInfo.mqh>
+
+CTrade trade;
+
+//+------------------------------------------------------------------+
+//| ENUMS GLOBALES Y ESTRUCTURAS DE MEMORIA                          |
+//+------------------------------------------------------------------+
+enum ENUM_ACCION_OP      { OP_COMPRA, OP_VENTA, OP_NINGUNA };
+enum ENUM_TIPO_MENSAJE   { MSG_CIERRE_SAR, MSG_APERTURA_COMPRA, MSG_APERTURA_VENTA };
+enum ENUM_ORIGEN_MENSAJE { ORIGEN_ENTRADA_SAR, ORIGEN_SALIDA_SAR, ORIGEN_CHASQUIDO_SAR, ORIGEN_SMART_TRAILING, ORIGEN_TIME_STOP, ORIGEN_SUPERVIVENCIA };
+enum ENUM_TIPO_BUSQUEDA  { BUSQUEDA_VALLE_ALCISTA, BUSQUEDA_PICO_BAJISTA };
+enum ENUM_MARCO_FSM      { MARCO_FAST=0, MARCO_MID=1, MARCO_SLOW=2 };
+enum ENUM_RESOLUCION_FSM { RES_15=15, RES_30=30, RES_60=60, RES_120=120, RES_240=240, RES_330=330, RES_500=500 };
+enum ENUM_METRICA_BASE   { BASE_FPP_CRUDO, BASE_FPP_V, BASE_FPP_A, BASE_INT_AREA, BASE_INT_V, BASE_INT_A, BASE_INT2_AREA, BASE_INT2_V, BASE_INT2_A };
+enum ENUM_METRICA_ACUMULADOR { ACUM_FPP_CRUDO, ACUM_FPP_V, ACUM_FPP_A, ACUM_INT_AREA, ACUM_INT_V, ACUM_INT_A, ACUM_INT2_AREA, ACUM_INT2_V, ACUM_INT2_A, ACUM_Z_FPP_CRUDO, ACUM_Z_FPP_V, ACUM_Z_FPP_A, ACUM_Z_INT_AREA, ACUM_Z_INT_V, ACUM_Z_INT_A, ACUM_Z_INT2_AREA, ACUM_Z_INT2_V, ACUM_Z_INT2_A };
+enum ENUM_BOOT_STATE     { BOOT_REQUEST_DATA, BOOT_WAIT_SYNC, BOOT_PROCESS_CHUNKS, BOOT_READY };
+enum ENUM_LOG_LEVEL      { LOG_LEVEL_0_PROD, LOG_LEVEL_1_INFO, LOG_LEVEL_2_DEBUG };
+
+const int UMBRAL_VELAS_EDAD = 3;
+const int MUTEX_TTL_SEGUNDOS = 90;
+
+struct DiagSnapshot { 
+   double fid; double d_; double theta; double c_; double t_pred; 
+   double p_in_freeze; double max_freeze; double min_freeze; double z_pred_freeze; datetime time_in_freeze;
+};
+
+// ESTRUCTURA BLINDADA FASE MLOPS GV 
+struct MensajeAccion {
+   int idxPar; string simbolo; ENUM_TIPO_MENSAJE accion; ENUM_ORIGEN_MENSAJE origen;     
+   ulong ticketCierre; double lote; int magicNumber; 
+   double z_pred_trx; double v_req_trx; double t_hat0_trx;
+   DiagSnapshot diag_cierre; 
+   bool ejecutado; bool loteEscalado; int reintentos;
+   bool telemetria_extraida; 
+   datetime timestamp_creacion;
+};
+
+// RIDGE 1. Causalidad Entrada Dual (Cabeza A: Velocidad | Cabeza B: Calidad OOF)
+struct CerebroML {
+   bool activado; double umbral; double w[10]; double bias; double ratio_captura;   
+   double mediana_v; double mad_v; double limite_tiempo;   
+   double tolerancia_vida; 
+   // 🧠 CABEZA B RIDGE 1 (V12.00+)
+   bool cabeza_t_activa; double w_T[10]; double bias_T; double t_min_admision;
+   // 📐 RIDGE DE TAMAÑO LAB-V7 (0 = apagado; 1 = modo A; 2 = modo B)
+   int tam_modo; double tam_act_med; double tam_a_is_med; double tam_esc_min; double tam_esc_max;
+   double tam_intercept; double tam_med_pred; double tam_w[11]; double tam_mu[11]; double tam_sd[11];
+};
+
+// RIDGE 2. Supervivencia Continua (w_superv extendido a 10 pesos + Inmunidad)
+struct CerebroSuperv { 
+   double b_superv; double k_abortar; double w_superv[10];
+   int inmunidad_velas; int n_features;
+};
+
+struct ConfigMotor {
+   ENUM_MARCO_FSM marco_in; ENUM_RESOLUCION_FSM res_in; int pz_in; ENUM_METRICA_BASE base_in; ENUM_METRICA_ACUMULADOR tension_in; double armado_in; double chasquido_in;
+   ENUM_MARCO_FSM marco_out; ENUM_RESOLUCION_FSM res_out; int pz_out; ENUM_METRICA_BASE base_out; ENUM_METRICA_ACUMULADOR tension_out; double armado_out; double chasquido_out;
+};
+struct ConfigPar { bool configurado; ConfigMotor toro; ConfigMotor oso; };
+
+struct Cerebro { 
+   double hist_tension[500]; int head_tension; double hist_base[500]; int head_base; double hist_v[500]; int head_v; double hist_a[500]; int head_a;  
+   double acum_ciclo; double extremo_tension; int ultimo_signo_ciclo; double picos_max[100]; double picos_min[100]; int num_picos_max; int num_picos_min; int edad_gatillo;
+};
+struct HistFPP { double fast[500]; int head_fast; double mid[500]; int head_mid; double slow[500]; int head_slow; };
+
+struct DatosPar {
+   string simbolo; double divisorPips; int magicToro; int magicOso; bool esOperable; 
+   double spread_asumido_ia;  
+   
+   ulong ticket_toro;  
+   ulong ticket_oso;   
+   
+   double p_in_toro; double max_toro; double min_toro; double v_req_toro; double z_pred_toro; double t_hat0_toro; datetime time_in_toro; 
+   double p_in_oso;  double max_oso;  double min_oso;  double v_req_oso;  double z_pred_oso;  double t_hat0_oso;  datetime time_in_oso;
+   int t_gain_toro; int t_loss_toro;
+   int t_gain_oso;  int t_loss_oso;
+
+   ConfigPar cfg; HistFPP fpp; 
+   
+   CerebroML ml_toro; CerebroML ml_oso;  
+   CerebroSuperv superv_toro; CerebroSuperv superv_oso; 
+   DiagSnapshot diag_toro; DiagSnapshot diag_oso; 
+   
+   Cerebro c_toro_in; Cerebro c_toro_out; Cerebro c_oso_in; Cerebro c_oso_out;
+   Cerebro c_toro_macro_1; Cerebro c_toro_macro_2; Cerebro c_oso_macro_1;  Cerebro c_oso_macro_2;
+};
+struct RowDouble { double cols[]; };
+
+//+------------------------------------------------------------------+
+//| INPUTS Y GLOBALES                                                |
+//+------------------------------------------------------------------+
+input group "==== GESTIÓN DE PORTAFOLIO ===="
+input string  ParesOperables      = "AUTO"; 
+input string  Pares28             = "EURUSDm,GBPUSDm,USDJPYm,USDCADm,USDCHFm,AUDUSDm,NZDUSDm,EURJPYm,GBPJPYm,AUDJPYm,NZDJPYm,CADJPYm,CHFJPYm,EURGBPm,EURAUDm,EURNZDm,EURCHFm,GBPCHFm,AUDCHFm,NZDCHFm,GBPAUDm,GBPCADm,GBPNZDm,AUDCADm,AUDNZDm,CADCHFm,EURCADm,NZDCADm";
+input group "==== MATEMÁTICAS GLOBALES ===="
+input string  MarcosTemporales    = "PERIOD_H1,PERIOD_H2,PERIOD_H6";
+input ENUM_TIMEFRAMES TF_Accion   = PERIOD_M1; 
+input string  Lookback_Velas_FPP  = "1,1,1"; 
+input group "==== GESTION DE RIESGO ===="
+input double Riesgo_Base_Por_1000 = 0.01; 
+input double LoteMinimo           = 0.01;
+input double LoteMaximo           = 5.0;
+input group "==== FILTROS INSTITUCIONALES ===="
+input double Max_Spread_Pips      = 3.0;     
+input bool   Bloquear_Rollover    = true;    
+input group "==== TELEMETRÍA Y SISTEMA ===="
+input ENUM_LOG_LEVEL Nivel_Telemetria = LOG_LEVEL_1_INFO;
+input int Heartbeat_Horas             = 1; 
+
+string g_paresArray[]; string g_tfsStrings[]; ENUM_TIMEFRAMES g_tfsArray[]; int g_lookbackArray[];
+int g_numPares; int g_numTFs; 
+DatosPar g_pares[]; MensajeAccion g_mensajes[]; int g_numMensajes = 0; RowDouble g_deltaNominal[]; 
+
+ENUM_BOOT_STATE g_boot_state = BOOT_REQUEST_DATA;
+const int VELAS_ARRANQUE = 9000; const int BUFFER_CACHE = 10000;
+int g_shift_actual = VELAS_ARRANQUE; const int CHUNK_SIZE = 200;      
+int g_timer_buzon = 0; int g_velasContadas = 0; datetime g_ultimaVelaAccion = 0;
+datetime g_ultimo_heartbeat = 0; int g_cached_positions = -1; 
+string g_mutex_name = "NEXUS_LOCK_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN));
+
+//+------------------------------------------------------------------+
+//| 📡 MÓDULO DE TELEMETRÍA INSTITUCIONAL E INYECCIONES I/O          |
+//+------------------------------------------------------------------+
+void Telemetria(ENUM_LOG_LEVEL nivel_requerido, string mensaje) {
+    if(Nivel_Telemetria >= nivel_requerido) {
+        string prefijo = "";
+        if(nivel_requerido == LOG_LEVEL_0_PROD) prefijo = "[CRÍTICO] ";
+        else if(nivel_requerido == LOG_LEVEL_1_INFO) prefijo = "[INFO] ";
+        else if(nivel_requerido == LOG_LEVEL_2_DEBUG) prefijo = "[DEBUG] ";
+        Print(prefijo + mensaje);
+    }
+}
+
+int ObtenerHashSimbolo(string sym) {
+   uint hash = 2166136261; 
+   for(int c=0; c<StringLen(sym); c++) { hash ^= StringGetCharacter(sym, c); hash *= 16777619; }
+   return (int)(hash & 0x7FFFFFFF); 
+}
+
+string ObtenerGV_VREQ(ulong ticket) { return "NX_V_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + IntegerToString(ticket); }
+string ObtenerGV_ZPRED(ulong ticket){ return "NX_Z_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + IntegerToString(ticket); }
+string ObtenerGV_THAT0(ulong ticket){ return "NX_T0_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + IntegerToString(ticket); }
+
+//+------------------------------------------------------------------+
+//| 🛡️ PARIDAD FORMULAS CORE SSOT (T-Score per-trade en Silicio)     |
+//+------------------------------------------------------------------+
+double CalcularTScoreTrade(double mfe_trade, double mae_trade, double prof_neta_trade, double t_gain, double t_loss, double spread_pips) {
+   double fee = mfe_trade / (mfe_trade + MathAbs(mae_trade) + spread_pips + 1e-9);
+   double fet = t_gain / MathMax(t_gain + t_loss, 1.0);
+   double mae_piso = MathMax(MathAbs(mae_trade), spread_pips);
+   double ivr_crudo = (prof_neta_trade - mae_trade) / (MathMax(t_loss, 1.0) * mae_piso + 1e-9);
+   return (fee * fet * ((MathTanh(ivr_crudo) + 1.0) / 2.0));
+}
+
+//+------------------------------------------------------------------+
+//| 🛡️ MÓDULO DE VALIDACIÓN DE SANIDAD S.S.O.T                       |
+//+------------------------------------------------------------------+
+bool EsNumeroValido(double v) {
+   if(v != v) return false;                          
+   if(v > 1.7e308 || v < -1.7e308) return false;      
+   return true;
+}
+
+bool RangoValido01(double v) {
+   return (EsNumeroValido(v) && v >= 0.0 && v <= 1.0);
+}
+
+bool PesosValidos(double &w[], int n) {
+   bool hayNoCero = false;
+   for(int i = 0; i < n; i++) {
+      if(!EsNumeroValido(w[i])) return false;
+      if(w[i] != 0.0) hayNoCero = true;
+   }
+   return hayNoCero; 
+}
+
+bool LabTamanoValido(CerebroML &ml) {
+   if(ml.tam_modo != 1 && ml.tam_modo != 2) return false;
+   if(!(ml.tam_act_med > 0.0) || !(ml.tam_a_is_med > 0.0)) return false;
+   if(!(ml.tam_esc_min > 0.0) || !(ml.tam_esc_max >= ml.tam_esc_min)) return false;
+   if(ml.tam_modo == 1) {
+      if(!(ml.tam_med_pred > 0.0)) return false;
+      for(int k = 0; k < 11; k++) { if(!(ml.tam_sd[k] > 0.0) || !MathIsValidNumber(ml.tam_w[k]) || !MathIsValidNumber(ml.tam_mu[k])) return false; }
+   }
+   return true;
+}
+
+bool ValidarSanidadConfiguracion(int idx) {
+   bool ok = true;
+   string sym = g_pares[idx].simbolo;
+
+   if(!RangoValido01(g_pares[idx].cfg.toro.armado_in)  || !RangoValido01(g_pares[idx].cfg.toro.chasquido_in) ||
+      !RangoValido01(g_pares[idx].cfg.toro.armado_out) || !RangoValido01(g_pares[idx].cfg.toro.chasquido_out)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": armado/chasquido TORO fuera de rango [0,1] o no numérico.");
+      ok = false;
+   }
+   if(!RangoValido01(g_pares[idx].cfg.oso.armado_in)  || !RangoValido01(g_pares[idx].cfg.oso.chasquido_in) ||
+      !RangoValido01(g_pares[idx].cfg.oso.armado_out) || !RangoValido01(g_pares[idx].cfg.oso.chasquido_out)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": armado/chasquido OSO fuera de rango [0,1] o no numérico.");
+      ok = false;
+   }
+
+   if(g_pares[idx].ml_toro.activado && !PesosValidos(g_pares[idx].ml_toro.w, 10)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": pesos ml_toro.w (Cabeza A) degenerados."); ok = false;
+   }
+   if(g_pares[idx].ml_oso.activado && !PesosValidos(g_pares[idx].ml_oso.w, 10)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": pesos ml_oso.w (Cabeza A) degenerados."); ok = false;
+   }
+
+   if(g_pares[idx].ml_toro.activado && g_pares[idx].ml_toro.cabeza_t_activa && !PesosValidos(g_pares[idx].ml_toro.w_T, 10)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": pesos ml_toro.w_T (Cabeza B) degenerados."); ok = false;
+   }
+   if(g_pares[idx].ml_oso.activado && g_pares[idx].ml_oso.cabeza_t_activa && !PesosValidos(g_pares[idx].ml_oso.w_T, 10)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": pesos ml_oso.w_T (Cabeza B) degenerados."); ok = false;
+   }
+
+   if(g_pares[idx].ml_toro.tam_modo != 0 && !LabTamanoValido(g_pares[idx].ml_toro)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [LAB-V7] " + sym + ": parámetros tam_* de ml_toro inválidos."); ok = false;
+   }
+   if(g_pares[idx].ml_oso.tam_modo != 0 && !LabTamanoValido(g_pares[idx].ml_oso)) {
+      Telemetria(LOG_LEVEL_0_PROD, "🛑 [LAB-V7] " + sym + ": parámetros tam_* de ml_oso inválidos."); ok = false;
+   }
+
+   int n_f_toro = (g_pares[idx].superv_toro.n_features == 10) ? 10 : 8;
+   if(g_pares[idx].ml_toro.activado && !PesosValidos(g_pares[idx].superv_toro.w_superv, n_f_toro)) {
+       Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": pesos SUPERV_TORO ausentes o degenerados."); ok = false;
+   }
+   int n_f_oso = (g_pares[idx].superv_oso.n_features == 10) ? 10 : 8;
+   if(g_pares[idx].ml_oso.activado && !PesosValidos(g_pares[idx].superv_oso.w_superv, n_f_oso)) {
+       Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] " + sym + ": pesos SUPERV_OSO ausentes o degenerados."); ok = false;
+   }
+   return ok;
+}
+
+//+------------------------------------------------------------------+
+//| 🧬 MÓDULO TELEMETRÍA AXIOMA 8 — ASYNC POLLING (ZERO SLEEP)       |
+//+------------------------------------------------------------------+
+bool EscribirTelemetriaCierre(MensajeAccion &msg, ulong position_id, int idxPar) {
+   if(!HistorySelectByPosition(position_id)) return false; 
+   int total_deals = HistoryDealsTotal();
+   if(total_deals == 0) return false; 
+   
+   double profit_broker_total = 0.0; double comision_total = 0.0; double swap_total = 0.0;
+   double precio_cierre = 0.0; datetime tiempo_cierre = 0;
+
+   for(int i = 0; i < total_deals; i++) {
+       ulong iter_deal = HistoryDealGetTicket(i);
+       profit_broker_total  += HistoryDealGetDouble(iter_deal, DEAL_PROFIT);
+       comision_total       += HistoryDealGetDouble(iter_deal, DEAL_COMMISSION);
+       swap_total           += HistoryDealGetDouble(iter_deal, DEAL_SWAP);
+       
+       long deal_entry = HistoryDealGetInteger(iter_deal, DEAL_ENTRY);
+       if(deal_entry == DEAL_ENTRY_OUT || deal_entry == DEAL_ENTRY_OUT_BY) {
+           precio_cierre  = HistoryDealGetDouble(iter_deal, DEAL_PRICE);
+           tiempo_cierre  = (datetime)HistoryDealGetInteger(iter_deal, DEAL_TIME);
+       }
+   }
+   if(tiempo_cierre == 0) tiempo_cierre = TimeCurrent(); 
+
+   bool esToro = (msg.magicNumber == g_pares[idxPar].magicToro);
+   double pips_mult = 1.0 / g_pares[idxPar].divisorPips;
+
+   double p_in_val = msg.diag_cierre.p_in_freeze;
+   double max_val  = msg.diag_cierre.max_freeze;
+   double min_val  = msg.diag_cierre.min_freeze;
+   double z_pred_interno = msg.diag_cierre.z_pred_freeze;
+   datetime t_in = msg.diag_cierre.time_in_freeze;
+
+   double mae_interno = (esToro) ? (min_val - p_in_val) * pips_mult : (p_in_val - max_val) * pips_mult;
+   double mfe_interno = (esToro) ? (max_val - p_in_val) * pips_mult : (p_in_val - min_val) * pips_mult;
+   double profit_interno = (esToro) ? (precio_cierre - p_in_val) * pips_mult : (p_in_val - precio_cierre) * pips_mult;
+   int velas_vida = iBarShift(g_pares[idxPar].simbolo, TF_Accion, t_in); if(velas_vida < 1) velas_vida = 1;
+
+   string nombre_archivo = "Nexus_Telemetria_Trades.csv";
+   bool existe = FileIsExist(nombre_archivo);
+   int handle = FileOpen(nombre_archivo, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_ANSI, ';');
+   if(handle == INVALID_HANDLE) return false;
+   FileSeek(handle, 0, SEEK_END);
+   
+   if(!existe || FileSize(handle) == 0) {
+      FileWrite(handle, "timestamp_cierre","simbolo","direccion","ticket","z_predicho","spread_pips","MAE_pips_interno","MFE_pips_interno","Profit_pips_interno","Profit_pips_broker","comision","swap","velas_vida","origen_cierre","fid","d_","theta","c_","t_pred_live");
+   }
+   
+   FileWrite(handle, (long)tiempo_cierre, g_pares[idxPar].simbolo, (esToro ? "LONG" : "SHORT"), (long)position_id, z_pred_interno, g_pares[idxPar].spread_asumido_ia, mae_interno, mfe_interno, profit_interno, profit_broker_total, comision_total, swap_total, velas_vida, EnumToString(msg.origen), msg.diag_cierre.fid, msg.diag_cierre.d_, msg.diag_cierre.theta, msg.diag_cierre.c_, msg.diag_cierre.t_pred);
+   FileClose(handle);
+   return true; 
+}
+
+void RegistrarEquitySnapshot() {
+   string nombre_archivo = "Nexus_Telemetria_Equity.csv";
+   bool existe = FileIsExist(nombre_archivo);
+   int handle = FileOpen(nombre_archivo, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_ANSI, ';');
+   if(handle == INVALID_HANDLE) return;
+   FileSeek(handle, 0, SEEK_END);
+   if(!existe || FileSize(handle) == 0) FileWrite(handle, "timestamp","balance","equity","margen_libre");
+   FileWrite(handle, (long)TimeCurrent(), AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY), AccountInfoDouble(ACCOUNT_MARGIN_FREE));
+   FileClose(handle);
+}
+
+void EmitirResultadoVela(string simbolo, string direccion, ulong ticket, bool vela_favorable) {
+   string nombre_archivo = "Nexus_Telemetria_Velas.csv";
+   bool existe = FileIsExist(nombre_archivo);
+   int handle = FileOpen(nombre_archivo, FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_ANSI, ';');
+   if(handle == INVALID_HANDLE) return;
+   FileSeek(handle, 0, SEEK_END);
+   if(!existe || FileSize(handle) == 0) FileWrite(handle, "timestamp","simbolo","direccion","ticket","resultado");
+   FileWrite(handle, (long)TimeCurrent(), simbolo, direccion, (long)ticket, (vela_favorable ? 1 : 0));
+   FileClose(handle);
+}
+
+void CargarConfiguracionesOptuna(int idx) {
+   string sym = g_pares[idx].simbolo; g_pares[idx].cfg.configurado = false; 
+   // =====================================================================
+   // Aquí se inyectan los parámetros autogenerados por Cerebro_MQL5_*.txt
+   // Compatible con V10.0 (E0) y V11.0 / V12.0 (E1..E3)
+   // =====================================================================
+
+   if(g_pares[idx].cfg.configurado) {
+      if(!ValidarSanidadConfiguracion(idx)) {
+         g_pares[idx].cfg.configurado = false;
+         Telemetria(LOG_LEVEL_0_PROD, "🛑 [V12.01] Configuración RECHAZADA para " + sym + " tras validación post-inyección.");
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| 🧮 MÓDULO 2: ÁLGEBRA O(1) Y ROBUST Z-SCORE C-ALLOC SAFE          |
+//+------------------------------------------------------------------+
+void CalcRegresion(double &y[], int n, double &a, double &v) {
+   a = 0; v = 0; if(n < 3) return;
+   double N_val = (double)(n - 1);
+   double sx  = (N_val * (N_val + 1.0)) / 2.0; double sx2 = (N_val * (N_val + 1.0) * (2.0 * N_val + 1.0)) / 6.0; double sx3 = sx * sx;
+   double sx4 = (N_val * (N_val + 1.0) * (2.0 * N_val + 1.0) * (3.0 * N_val * N_val + 3.0 * N_val - 1.0)) / 30.0;
+   double D = sx4 * (sx2 * n - sx * sx) - sx3 * (sx3 * n - sx * sx2) + sx2 * (sx3 * sx - sx2 * sx2); if(D == 0.0) return;
+   double sy=0, sxy=0, sx2y=0;
+   for(int i=0; i<n; i++) {
+      double x_actual = (double)((n - 1) - i); double yi = y[i]; sy += yi; sxy += yi * x_actual; sx2y += yi * (x_actual * x_actual);
+   }
+   double Da = sx2y * (sx2 * n - sx * sx) - sx3 * (sxy * n - sy * sx) + sx2 * (sxy * sx - sy * sx2);
+   double Db = sx4 * (sxy * n - sy * sx) - sx2y * (sx3 * n - sx * sx2) + sx2 * (sx3 * sy - sxy * sx2);
+   a = Da / D; double b = Db / D; v = 2.0 * a * (n - 1) + b;
+}
+
+double CalcRobustZScoreGeneric(double &hist[], int head, int pz_raw) {
+   if(pz_raw < 2) return 0.0;
+   int pz = (int)MathMin(pz_raw, 500); 
+   
+   double temp[500]; double sorted[500]; double devs[500];
+   for(int i=0; i<pz; i++) { temp[i] = hist[(head + i) % 500]; sorted[i] = temp[i]; }
+   
+   for(int i=1; i<pz; i++) {
+       double key = sorted[i]; int j = i - 1;
+       while(j >= 0 && sorted[j] > key) { sorted[j + 1] = sorted[j]; j--; }
+       sorted[j + 1] = key;
+   }
+   
+   double mediana = (pz % 2 != 0) ? sorted[pz/2] : (sorted[(pz/2)-1] + sorted[pz/2]) / 2.0;
+   
+   for(int i=0; i<pz; i++) devs[i] = MathAbs(temp[i] - mediana);
+   
+   for(int i=1; i<pz; i++) {
+       double key = devs[i]; int j = i - 1;
+       while(j >= 0 && devs[j] > key) { devs[j + 1] = devs[j]; j--; }
+       devs[j + 1] = key;
+   }
+   
+   double mad = (pz % 2 != 0) ? devs[pz/2] : (devs[(pz/2)-1] + devs[pz/2]) / 2.0; if(mad < 1e-9) return 0.0; 
+   return (hist[head] - mediana) / mad;
+}
+
+double Evaluar_Jefe_Riesgos_Ridge(double &X[], double &W[], double bias) { double Z = 0.0; for(int i=0; i<10; i++) { Z += W[i] * X[i]; } return Z + bias; }
+
+// 📐 LAB-V7: actividad = Σ|ΔOpen| de 60 velas hasta la vela cerrada, en pips. Suma ascendente en el tiempo (desplazamiento 59 → 0).
+double LabActividad(const string s, int shift_base, double pips_mult) {
+   double act = 0.0;
+   for(int m = 59; m >= 0; m--) {
+      double o1 = iOpen(s, TF_Accion, shift_base + m);
+      double o0 = iOpen(s, TF_Accion, shift_base + m + 1);
+      if(o1 <= 0.0 || o0 <= 0.0) return -1.0;
+      act += MathAbs(o1 - o0) * pips_mult;
+   }
+   return act;
+}
+
+// 📐 LAB-V7: escala de v_req. Mismo orden de operaciones que _lab_esc_A_nb / _lab_esc_B_nb de Fase_4_lab.py.
+double LabEscalaTamano(CerebroML &ml, double &X[], double act) {
+   if(ml.tam_modo == 0) return 1.0;
+   double a = (act >= 0.0) ? (act / ml.tam_act_med) : ml.tam_a_is_med;
+   double e;
+   if(ml.tam_modo == 2) e = a / ml.tam_a_is_med;
+   else {
+      double t = 0.0;
+      for(int k = 0; k < 11; k++) {
+         double xk = (k < 10) ? X[k] : a;
+         t += ml.tam_w[k] * ((xk - ml.tam_mu[k]) / ml.tam_sd[k]);
+      }
+      e = (t + ml.tam_intercept) / ml.tam_med_pred;
+   }
+   if(e < ml.tam_esc_min) e = ml.tam_esc_min;
+   if(e > ml.tam_esc_max) e = ml.tam_esc_max;
+   return e;
+}
+
+double ObtenerSatCausalOptimizada(double &extremos[], int cant, int dir) {
+   double fallback_val = 10.0; if(dir == -1) fallback_val = -10.0; 
+   if(cant < 5) return fallback_val;
+   
+   double sorted[100]; int limite = MathMin(cant, 100);
+   for(int i = 0; i < limite; i++) sorted[i] = extremos[i];
+   
+   for(int i = 1; i < limite; i++) {
+       double key = sorted[i]; int j = i - 1;
+       while(j >= 0 && sorted[j] > key) { sorted[j + 1] = sorted[j]; j--; }
+       sorted[j + 1] = key;
+   }
+   
+   if(limite % 2 != 0) return sorted[limite/2]; 
+   return (sorted[(limite/2)-1] + sorted[limite/2]) / 2.0; 
+}
+
+void InitCerebro(Cerebro &c) {
+   ArrayInitialize(c.hist_tension, 0.0); ArrayInitialize(c.hist_base, 0.0);
+   ArrayInitialize(c.hist_v, 0.0); ArrayInitialize(c.hist_a, 0.0);
+   ArrayInitialize(c.picos_max, 0.0); ArrayInitialize(c.picos_min, 0.0);
+   c.head_tension = 0; c.head_base = 0; c.head_v = 0; c.head_a = 0;
+   c.acum_ciclo = 0.0; c.extremo_tension = 0.0; c.ultimo_signo_ciclo = 0;
+   c.num_picos_max = 0; c.num_picos_min = 0; c.edad_gatillo = 0;
+}
+
+//+------------------------------------------------------------------+
+//| 🧠 ACTUALIZADOR UNIVERSAL 4D (Edge Triggering)                   |
+//+------------------------------------------------------------------+
+bool ActualizarCinematicaCerebro(Cerebro &c, HistFPP &fpp, ENUM_MARCO_FSM marco, int res, int pz, ENUM_METRICA_BASE base, ENUM_METRICA_ACUMULADOR tension, double armado, double chasquido, ENUM_TIPO_BUSQUEDA busqueda, bool es_motor_salida, double &out_zscore_base, double &out_v_ml, double &out_a_ml, string debug_tag = "") {
+   double crudo[500]; 
+   int h_ptr = (marco == MARCO_FAST) ? fpp.head_fast : (marco == MARCO_MID ? fpp.head_mid : fpp.head_slow);
+   if(marco == MARCO_FAST) { for(int i=0; i<res; i++) crudo[i] = fpp.fast[(h_ptr + i) % 500]; }
+   else if(marco == MARCO_MID) { for(int i=0; i<res; i++) crudo[i] = fpp.mid[(h_ptr + i) % 500]; }
+   else { for(int i=0; i<res; i++) crudo[i] = fpp.slow[(h_ptr + i) % 500]; }
+
+   double val_base = 0; double val_tension_cruda = 0; double tension_final = 0; double val_v_cruda = 0; double val_a_cruda = 0; out_zscore_base = 0.0; out_v_ml = 0.0; out_a_ml = 0.0;
+
+   if(g_velasContadas >= res) {
+      double int1[500]; double int2[500]; 
+      int1[res-1] = crudo[res-1]; for(int j=res-2; j>=0; j--) int1[j] = int1[j+1] + crudo[j];
+      int2[res-1] = int1[res-1]; for(int j=res-2; j>=0; j--) int2[j] = int2[j+1] + int1[j];
+      double a_fpp, v_fpp, a_i1, v_i1, a_i2, v_i2; CalcRegresion(crudo, res, a_fpp, v_fpp); CalcRegresion(int1, res, a_i1, v_i1); CalcRegresion(int2, res, a_i2, v_i2);
+
+      switch(base) {
+         case BASE_FPP_CRUDO: case BASE_FPP_V: case BASE_FPP_A: val_base = (base == BASE_FPP_CRUDO) ? crudo[0] : (base == BASE_FPP_V ? v_fpp : a_fpp); val_v_cruda = v_fpp; val_a_cruda = a_fpp; break;
+         case BASE_INT_AREA: case BASE_INT_V: case BASE_INT_A: val_base = (base == BASE_INT_AREA) ? int1[0] : (base == BASE_INT_V ? v_i1 : a_i1); val_v_cruda = v_i1; val_a_cruda = a_i1; break;
+         case BASE_INT2_AREA: case BASE_INT2_V: case BASE_INT2_A: val_base = (base == BASE_INT2_AREA) ? int2[0] : (base == BASE_INT2_V ? v_i2 : a_i2); val_v_cruda = v_i2; val_a_cruda = a_i2; break;
+      }
+      
+      int t_enum = (int)tension; if(t_enum > 8) t_enum -= 9; 
+      switch(t_enum) {
+         case 0: val_tension_cruda=crudo[0]; break; case 1: val_tension_cruda=v_fpp; break; case 2: val_tension_cruda=a_fpp; break;
+         case 3: val_tension_cruda=int1[0]; break; case 4: val_tension_cruda=v_i1; break; case 5: val_tension_cruda=a_i1; break;
+         case 6: val_tension_cruda=int2[0]; break; case 7: val_tension_cruda=v_i2; break; case 8: val_tension_cruda=a_i2; break;
+      }
+   }
+
+   c.head_base = (c.head_base - 1 + 500) % 500; c.hist_base[c.head_base] = val_base;
+   c.head_tension = (c.head_tension - 1 + 500) % 500; c.hist_tension[c.head_tension] = val_tension_cruda;
+   c.head_v = (c.head_v - 1 + 500) % 500; c.hist_v[c.head_v] = val_v_cruda;
+   c.head_a = (c.head_a - 1 + 500) % 500; c.hist_a[c.head_a] = val_a_cruda;
+   tension_final = val_tension_cruda; out_zscore_base = val_base; out_v_ml = val_v_cruda; out_a_ml = val_a_cruda;
+   
+   if(pz >= 2 && g_velasContadas >= pz) {
+      if((int)tension > 8) { 
+          tension_final = CalcRobustZScoreGeneric(c.hist_tension, c.head_tension, pz); 
+          out_zscore_base = CalcRobustZScoreGeneric(c.hist_base, c.head_base, pz); 
+          out_v_ml = CalcRobustZScoreGeneric(c.hist_v, c.head_v, pz);
+          out_a_ml = CalcRobustZScoreGeneric(c.hist_a, c.head_a, pz);
+      }
+   }
+
+   int nuevo_signo = (val_base > 0) ? 1 : ((val_base < 0) ? -1 : c.ultimo_signo_ciclo);
+   if(nuevo_signo != c.ultimo_signo_ciclo && c.ultimo_signo_ciclo != 0) {
+      if(c.ultimo_signo_ciclo == 1 && c.extremo_tension >= 0.0) {
+         if(c.num_picos_max >= 100) { ArrayCopy(c.picos_max, c.picos_max, 0, 1, 99); c.picos_max[99] = c.extremo_tension; } else { c.picos_max[c.num_picos_max] = c.extremo_tension; c.num_picos_max++; }
+      } else if(c.ultimo_signo_ciclo == -1 && c.extremo_tension <= 0.0) {
+         if(c.num_picos_min >= 100) { ArrayCopy(c.picos_min, c.picos_min, 0, 1, 99); c.picos_min[99] = c.extremo_tension; } else { c.picos_min[c.num_picos_min] = c.extremo_tension; c.num_picos_min++; }
+      }
+      c.acum_ciclo = tension_final; c.extremo_tension = c.acum_ciclo;
+   } else {
+      c.acum_ciclo += tension_final;
+      if(nuevo_signo > 0) c.extremo_tension = MathMax(c.extremo_tension, c.acum_ciclo);
+      else if(nuevo_signo < 0) c.extremo_tension = MathMin(c.extremo_tension, c.acum_ciclo);
+   }
+   c.ultimo_signo_ciclo = nuevo_signo;
+
+   bool condicion_logica = false;
+   if(g_velasContadas > 500) {
+      if(busqueda == BUSQUEDA_VALLE_ALCISTA && c.ultimo_signo_ciclo < 0) { 
+         double sat_inf = ObtenerSatCausalOptimizada(c.picos_min, c.num_picos_min, -1);
+         if(c.extremo_tension <= (sat_inf * armado) && c.acum_ciclo >= (c.extremo_tension * (1.0 - chasquido))) condicion_logica = true;
+      } 
+      else if(busqueda == BUSQUEDA_PICO_BAJISTA && c.ultimo_signo_ciclo > 0) { 
+         double sat_sup = ObtenerSatCausalOptimizada(c.picos_max, c.num_picos_max, 1);
+         if(c.extremo_tension >= (sat_sup * armado) && c.acum_ciclo <= (c.extremo_tension * (1.0 - chasquido))) condicion_logica = true;
+      }
+   }
+   if(condicion_logica) c.edad_gatillo++; else c.edad_gatillo = 0;
+   if(condicion_logica && (es_motor_salida || c.edad_gatillo <= UMBRAL_VELAS_EDAD)) return true;
+   return false;
+}
+
+bool EsRolloverToxicoNY() {
+    datetime time_gmt = TimeGMT(); MqlDateTime gmt; TimeToStruct(time_gmt, gmt); bool is_dst = false;
+    if(gmt.mon > 3 && gmt.mon < 11) is_dst = true;
+    else if(gmt.mon == 3) { int previous_sunday = gmt.day - gmt.day_of_week; if(previous_sunday >= 8) is_dst = true; }
+    else if(gmt.mon == 11) { int previous_sunday = gmt.day - gmt.day_of_week; if(previous_sunday <= 0) is_dst = true; }
+    int offset_ny = is_dst ? -4 : -5; datetime time_ny = time_gmt + (offset_ny * 3600); MqlDateTime ny; TimeToStruct(time_ny, ny);
+    if(ny.hour == 17 || (ny.hour == 16 && ny.min >= 55) || (ny.hour == 18 && ny.min <= 5)) return true;
+    return false;
+}
+
+//+------------------------------------------------------------------+
+//| 📡 CONCILIADOR DE ESTADOS (SSOT Ticket-Based I/O SAFE MEMORY)    |
+//+------------------------------------------------------------------+
+void SincronizarEstadosReales() {
+   bool mt5_toro_vivo[]; ArrayResize(mt5_toro_vivo, g_numPares); ArrayInitialize(mt5_toro_vivo, false);
+   bool mt5_oso_vivo[];  ArrayResize(mt5_oso_vivo, g_numPares);  ArrayInitialize(mt5_oso_vivo, false);
+   
+   for(int i=PositionsTotal()-1; i>=0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(PositionSelectByTicket(t)) {
+         int magic = (int)PositionGetInteger(POSITION_MAGIC);
+         double price_open = PositionGetDouble(POSITION_PRICE_OPEN);
+         datetime time_open = (datetime)PositionGetInteger(POSITION_TIME);
+         
+         for(int p=0; p<g_numPares; p++) {
+            if(magic == g_pares[p].magicToro) {
+               mt5_toro_vivo[p] = true; 
+               if(g_pares[p].ticket_toro == 0) { 
+                  g_pares[p].ticket_toro = t; g_pares[p].p_in_toro = price_open; g_pares[p].time_in_toro = time_open;
+                  double max_hist = price_open; double min_hist = price_open; int shift_apertura = iBarShift(g_pares[p].simbolo, TF_Accion, time_open);
+                  int tg = 0; int tl = 0;
+                  if(shift_apertura > 0) { 
+                     for(int v=1; v<=shift_apertura; v++) { 
+                        max_hist = MathMax(max_hist, iHigh(g_pares[p].simbolo, TF_Accion, v)); 
+                        min_hist = MathMin(min_hist, iLow(g_pares[p].simbolo, TF_Accion, v)); 
+                        double op_v = iOpen(g_pares[p].simbolo, TF_Accion, v);
+                        double prof_v = ((op_v - price_open) / g_pares[p].divisorPips) - g_pares[p].spread_asumido_ia;
+                        if(prof_v > 0.0) tg++; else tl++;
+                     } 
+                  }
+                  g_pares[p].max_toro = max_hist; g_pares[p].min_toro = min_hist;
+                  g_pares[p].t_gain_toro = tg;   g_pares[p].t_loss_toro = tl;
+                  
+                  string gv_v = ObtenerGV_VREQ(t); string gv_z = ObtenerGV_ZPRED(t); string gv_t0 = ObtenerGV_THAT0(t);
+                  g_pares[p].v_req_toro  = (GlobalVariableCheck(gv_v))  ? GlobalVariableGet(gv_v)  : 0.0;
+                  g_pares[p].z_pred_toro = (GlobalVariableCheck(gv_z))  ? GlobalVariableGet(gv_z)  : 0.0;
+                  g_pares[p].t_hat0_toro = (GlobalVariableCheck(gv_t0)) ? GlobalVariableGet(gv_t0) : 0.0;
+               }
+            }
+            if(magic == g_pares[p].magicOso) {
+               mt5_oso_vivo[p] = true; 
+               if(g_pares[p].ticket_oso == 0) { 
+                  g_pares[p].ticket_oso = t; g_pares[p].p_in_oso = price_open; g_pares[p].time_in_oso = time_open;
+                  double max_hist = price_open; double min_hist = price_open; int shift_apertura = iBarShift(g_pares[p].simbolo, TF_Accion, time_open);
+                  int tg = 0; int tl = 0;
+                  if(shift_apertura > 0) { 
+                     for(int v=1; v<=shift_apertura; v++) { 
+                        max_hist = MathMax(max_hist, iHigh(g_pares[p].simbolo, TF_Accion, v)); 
+                        min_hist = MathMin(min_hist, iLow(g_pares[p].simbolo, TF_Accion, v)); 
+                        double op_v = iOpen(g_pares[p].simbolo, TF_Accion, v);
+                        double prof_v = ((price_open - op_v) / g_pares[p].divisorPips) - g_pares[p].spread_asumido_ia;
+                        if(prof_v > 0.0) tg++; else tl++;
+                     } 
+                  }
+                  g_pares[p].max_oso = max_hist; g_pares[p].min_oso = min_hist;
+                  g_pares[p].t_gain_oso = tg;    g_pares[p].t_loss_oso = tl;
+                  
+                  string gv_v_o = ObtenerGV_VREQ(t); string gv_z_o = ObtenerGV_ZPRED(t); string gv_t0_o = ObtenerGV_THAT0(t);
+                  g_pares[p].v_req_oso  = (GlobalVariableCheck(gv_v_o))  ? GlobalVariableGet(gv_v_o)  : 0.0;
+                  g_pares[p].z_pred_oso = (GlobalVariableCheck(gv_z_o))  ? GlobalVariableGet(gv_z_o)  : 0.0;
+                  g_pares[p].t_hat0_oso = (GlobalVariableCheck(gv_t0_o)) ? GlobalVariableGet(gv_t0_o) : 0.0;
+               }
+            }
+         }
+      }
+   }
+   for(int p=0; p<g_numPares; p++) {
+      if(g_pares[p].ticket_toro > 0 && !mt5_toro_vivo[p]) { 
+         GlobalVariableDel(ObtenerGV_VREQ(g_pares[p].ticket_toro)); 
+         GlobalVariableDel(ObtenerGV_ZPRED(g_pares[p].ticket_toro)); 
+         GlobalVariableDel(ObtenerGV_THAT0(g_pares[p].ticket_toro));
+         g_pares[p].ticket_toro = 0; g_pares[p].p_in_toro = 0; g_pares[p].max_toro = 0; g_pares[p].min_toro = 0; 
+         g_pares[p].v_req_toro = 0;  g_pares[p].z_pred_toro = 0; g_pares[p].t_hat0_toro = 0;
+         g_pares[p].t_gain_toro = 0; g_pares[p].t_loss_toro = 0;
+      }
+      if(g_pares[p].ticket_oso > 0 && !mt5_oso_vivo[p]) { 
+         GlobalVariableDel(ObtenerGV_VREQ(g_pares[p].ticket_oso)); 
+         GlobalVariableDel(ObtenerGV_ZPRED(g_pares[p].ticket_oso)); 
+         GlobalVariableDel(ObtenerGV_THAT0(g_pares[p].ticket_oso));
+         g_pares[p].ticket_oso = 0;  g_pares[p].p_in_oso = 0;  g_pares[p].max_oso = 0;  g_pares[p].min_oso = 0;  
+         g_pares[p].v_req_oso = 0;   g_pares[p].z_pred_oso = 0;  g_pares[p].t_hat0_oso = 0;
+         g_pares[p].t_gain_oso = 0;  g_pares[p].t_loss_oso = 0;
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| ✉️ MÓDULO 4: BUZÓN TRANSACCIONAL, MARGEN Y PÉNDULO ASYNC I/O       |
+//+------------------------------------------------------------------+
+void EncolarMensaje(int idxPar, ENUM_TIPO_MENSAJE accion, ENUM_ORIGEN_MENSAJE origen, ulong ticket, double lote, int magic, double p_zpred=0.0, double p_vreq=0.0, double p_that0=0.0) {
+   ArrayResize(g_mensajes, g_numMensajes + 1, 15);
+   g_mensajes[g_numMensajes].idxPar = idxPar; g_mensajes[g_numMensajes].simbolo = g_pares[idxPar].simbolo; g_mensajes[g_numMensajes].accion = accion; g_mensajes[g_numMensajes].origen = origen; g_mensajes[g_numMensajes].ticketCierre = ticket; g_mensajes[g_numMensajes].lote = lote; g_mensajes[g_numMensajes].magicNumber = magic;
+   g_mensajes[g_numMensajes].z_pred_trx = p_zpred; g_mensajes[g_numMensajes].v_req_trx = p_vreq; g_mensajes[g_numMensajes].t_hat0_trx = p_that0;
+   ZeroMemory(g_mensajes[g_numMensajes].diag_cierre);
+   g_mensajes[g_numMensajes].ejecutado = false; g_mensajes[g_numMensajes].loteEscalado = false; g_mensajes[g_numMensajes].reintentos = 0; 
+   g_mensajes[g_numMensajes].telemetria_extraida = false;
+   g_mensajes[g_numMensajes].timestamp_creacion = TimeCurrent();
+   g_numMensajes++;
+}
+
+void EncolarMensajeCierreConDiag(int idxPar, ENUM_ORIGEN_MENSAJE origen, ulong ticket, int magic, DiagSnapshot &p_diag) {
+   EncolarMensaje(idxPar, MSG_CIERRE_SAR, origen, ticket, 0.0, magic);
+   g_mensajes[g_numMensajes - 1].diag_cierre = p_diag;
+}
+
+void EncolarCierresPorMagic(int idxPar, int magic, ENUM_ORIGEN_MENSAJE origen) {
+   if((magic == g_pares[idxPar].magicToro && g_pares[idxPar].ticket_toro == 0) || (magic == g_pares[idxPar].magicOso && g_pares[idxPar].ticket_oso == 0)) return;
+
+   DiagSnapshot diag_actual;
+   bool esToroLocal = (magic == g_pares[idxPar].magicToro);
+   if(esToroLocal) {
+       diag_actual = g_pares[idxPar].diag_toro;
+       diag_actual.p_in_freeze = g_pares[idxPar].p_in_toro; diag_actual.max_freeze = g_pares[idxPar].max_toro; diag_actual.min_freeze = g_pares[idxPar].min_toro;
+       diag_actual.z_pred_freeze = g_pares[idxPar].z_pred_toro; diag_actual.time_in_freeze = g_pares[idxPar].time_in_toro;
+   } else {
+       diag_actual = g_pares[idxPar].diag_oso;
+       diag_actual.p_in_freeze = g_pares[idxPar].p_in_oso; diag_actual.max_freeze = g_pares[idxPar].max_oso; diag_actual.min_freeze = g_pares[idxPar].min_oso;
+       diag_actual.z_pred_freeze = g_pares[idxPar].z_pred_oso; diag_actual.time_in_freeze = g_pares[idxPar].time_in_oso;
+   }
+
+   for(int i=PositionsTotal()-1; i>=0; i--) {
+      ulong t = PositionGetTicket(i);
+      if(PositionSelectByTicket(t) && PositionGetString(POSITION_SYMBOL)==g_pares[idxPar].simbolo && (int)PositionGetInteger(POSITION_MAGIC)==magic) {
+         bool yaEncolado = false; for(int j=0; j<g_numMensajes; j++) { if(g_mensajes[j].ticketCierre == t && !g_mensajes[j].ejecutado) { yaEncolado = true; break; } }
+         if(!yaEncolado) EncolarMensajeCierreConDiag(idxPar, origen, t, magic, diag_actual);
+      }
+   }
+}
+
+void EjecutarBuzon() {
+   if(g_numMensajes == 0) return;
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED) || !TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !MQLInfoInteger(MQL_TRADE_ALLOWED)) return; 
+
+   double margen_requerido_total = 0.0; double maxLoteEnCola = 0.0;
+   for(int i=0; i<g_numMensajes; i++) {
+      if(!g_mensajes[i].ejecutado && !g_mensajes[i].loteEscalado && (g_mensajes[i].accion == MSG_APERTURA_COMPRA || g_mensajes[i].accion == MSG_APERTURA_VENTA)) {
+         if(g_mensajes[i].lote > maxLoteEnCola) maxLoteEnCola = g_mensajes[i].lote;
+         double mrg = 0.0; ENUM_ORDER_TYPE tipo = (g_mensajes[i].accion == MSG_APERTURA_COMPRA) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+         double precio = (tipo == ORDER_TYPE_BUY) ? SymbolInfoDouble(g_mensajes[i].simbolo, SYMBOL_ASK) : SymbolInfoDouble(g_mensajes[i].simbolo, SYMBOL_BID);
+         if(!OrderCalcMargin(tipo, g_mensajes[i].simbolo, g_mensajes[i].lote, precio, mrg)) mrg = AccountInfoDouble(ACCOUNT_MARGIN_FREE) * 2.0; 
+         margen_requerido_total += mrg;
+      }
+   }
+
+   double factorMaxLote = (maxLoteEnCola > LoteMaximo) ? (LoteMaximo / maxLoteEnCola) : 1.0; double margen_libre = AccountInfoDouble(ACCOUNT_MARGIN_FREE); double margen_permitido = margen_libre * 0.85; double factorMargen = 1.0;
+   if(margen_requerido_total > margen_permitido && margen_requerido_total > 0) factorMargen = margen_permitido / margen_requerido_total;
+   double factorEscalarFinal = MathMin(factorMaxLote, factorMargen);
+
+   for(int i=0; i<g_numMensajes; i++) {
+      if(!g_mensajes[i].loteEscalado && (g_mensajes[i].accion == MSG_APERTURA_COMPRA || g_mensajes[i].accion == MSG_APERTURA_VENTA)) {
+         double loteBalanceado = g_mensajes[i].lote * factorEscalarFinal;
+         double step = SymbolInfoDouble(g_mensajes[i].simbolo, SYMBOL_VOLUME_STEP); if(step <= 0.0) step = 0.01; double minL = SymbolInfoDouble(g_mensajes[i].simbolo, SYMBOL_VOLUME_MIN); if(minL <= 0.0) minL = 0.01;
+         g_mensajes[i].lote = NormalizeDouble(MathRound(MathMax(minL, loteBalanceado)/step)*step, 2); g_mensajes[i].loteEscalado = true;
+      }
+   }
+
+   bool esRollover = (Bloquear_Rollover && EsRolloverToxicoNY());
+   for(int i=0; i<g_numMensajes; i++) {
+      if(g_mensajes[i].ejecutado) {
+          if(g_mensajes[i].accion == MSG_CIERRE_SAR && !g_mensajes[i].telemetria_extraida) {
+              g_mensajes[i].reintentos++;
+              g_mensajes[i].telemetria_extraida = EscribirTelemetriaCierre(g_mensajes[i], g_mensajes[i].ticketCierre, g_mensajes[i].idxPar);
+              if(!g_mensajes[i].telemetria_extraida && g_mensajes[i].reintentos >= 50) g_mensajes[i].telemetria_extraida = true; 
+          }
+          continue;
+      }
+      
+      int idx = g_mensajes[i].idxPar; bool esNuevaOrden = (g_mensajes[i].accion != MSG_CIERRE_SAR);
+      
+      if(esNuevaOrden) {
+         int max_segundos_ttl = UMBRAL_VELAS_EDAD * PeriodSeconds(TF_Accion);
+         if(TimeCurrent() - g_mensajes[i].timestamp_creacion > max_segundos_ttl) { g_mensajes[i].ejecutado = true; continue; }
+         if(esRollover) continue; 
+         double spreadActual = (double)SymbolInfoInteger(g_mensajes[i].simbolo, SYMBOL_SPREAD) * SymbolInfoDouble(g_mensajes[i].simbolo, SYMBOL_POINT);
+         double spreadPips = spreadActual / g_pares[idx].divisorPips;
+         if(spreadPips > Max_Spread_Pips) continue; 
+      }
+      
+      g_mensajes[i].reintentos++;
+      
+      if(!esNuevaOrden) { 
+         ulong t = g_mensajes[i].ticketCierre; 
+         if(PositionSelectByTicket(t)) {
+            if(trade.PositionClose(t)) { 
+                uint ret = trade.ResultRetcode(); ulong deal = trade.ResultDeal(); 
+                if(ret == TRADE_RETCODE_DONE || ret == TRADE_RETCODE_PLACED || ret == TRADE_RETCODE_DONE_PARTIAL || deal > 0) {
+                    g_mensajes[i].ejecutado = true;
+                    g_mensajes[i].reintentos = 0; 
+                    g_mensajes[i].telemetria_extraida = EscribirTelemetriaCierre(g_mensajes[i], t, idx);
+                }
+            }
+         } else { 
+             g_mensajes[i].ejecutado = true; 
+             g_mensajes[i].reintentos = 0; 
+             g_mensajes[i].telemetria_extraida = EscribirTelemetriaCierre(g_mensajes[i], t, idx);
+         }
+      }
+      else {
+         trade.SetExpertMagicNumber(g_mensajes[i].magicNumber);
+         string comentario = "NX_" + DoubleToString(g_mensajes[i].v_req_trx, 4);
+         bool success = (g_mensajes[i].accion == MSG_APERTURA_COMPRA) ? trade.Buy(g_mensajes[i].lote, g_mensajes[i].simbolo, 0, 0, 0, comentario) : trade.Sell(g_mensajes[i].lote, g_mensajes[i].simbolo, 0, 0, 0, comentario);
+         
+         if(success) { 
+             uint ret = trade.ResultRetcode(); ulong deal = trade.ResultDeal(); 
+             if(ret == TRADE_RETCODE_DONE || ret == TRADE_RETCODE_PLACED || ret == TRADE_RETCODE_DONE_PARTIAL || deal > 0) { 
+                 g_mensajes[i].ejecutado = true; 
+                 g_mensajes[i].telemetria_extraida = true; 
+                 ulong trd_tck = trade.ResultOrder(); 
+                 if(trd_tck <= 0) trd_tck = trade.ResultDeal(); 
+                 if(trd_tck > 0) {
+                     if(g_mensajes[i].v_req_trx != 0.0)  GlobalVariableSet(ObtenerGV_VREQ(trd_tck), g_mensajes[i].v_req_trx);
+                     if(g_mensajes[i].z_pred_trx != 0.0) GlobalVariableSet(ObtenerGV_ZPRED(trd_tck), g_mensajes[i].z_pred_trx);
+                     if(g_mensajes[i].t_hat0_trx != 0.0) GlobalVariableSet(ObtenerGV_THAT0(trd_tck), g_mensajes[i].t_hat0_trx);
+                 }
+             } 
+         }
+      }
+      if(!g_mensajes[i].ejecutado && g_mensajes[i].reintentos >= 10) { g_mensajes[i].ejecutado = true; g_mensajes[i].telemetria_extraida = true; g_cached_positions = -1; }
+   }
+   
+   MensajeAccion pendientes[]; int conteoPendientes = 0; ArrayResize(pendientes, g_numMensajes);
+   for(int i=0; i<g_numMensajes; i++) { 
+       bool purgar = g_mensajes[i].ejecutado;
+       if(g_mensajes[i].accion == MSG_CIERRE_SAR && !g_mensajes[i].telemetria_extraida) purgar = false; 
+       if(!purgar) { pendientes[conteoPendientes] = g_mensajes[i]; conteoPendientes++; } 
+   }
+   g_numMensajes = conteoPendientes; ArrayResize(g_mensajes, g_numMensajes);
+   for(int i=0; i<g_numMensajes; i++) g_mensajes[i] = pendientes[i];
+}
+
+bool ExisteOrdenPendiente(int idxPar, ENUM_TIPO_MENSAJE accion) {
+   for(int i=0; i<g_numMensajes; i++) { if(!g_mensajes[i].ejecutado && g_mensajes[i].idxPar == idxPar && g_mensajes[i].accion == accion) return true; } return false;
+}
+
+//+------------------------------------------------------------------+
+//| 🧱 MÓDULO 3: MATRIZ ANTI-DOMINÓ (CÁLCULO Y DEEP BOOT SPLIT)      |
+//+------------------------------------------------------------------+
+void AnalizarMercado(datetime target_time) {
+   int paresActivos = 0; bool parValido[]; ArrayResize(parValido, g_numPares); ArrayInitialize(parValido, false);
+   for(int i=0; i<g_numPares; i++) {
+      string s = g_pares[i].simbolo; if(!g_pares[i].esOperable || !g_pares[i].cfg.configurado) continue;
+      int shift_base = iBarShift(s, TF_Accion, target_time, false); if(shift_base < 0) continue; 
+      
+      bool es_tiempo_real_local = (target_time >= iTime(s, TF_Accion, 1));
+      if(es_tiempo_real_local) { 
+         bool opsToro = (g_pares[i].ticket_toro > 0); bool opsOso  = (g_pares[i].ticket_oso > 0);
+         if(opsToro || opsOso) {
+            double high_v = iHigh(s, TF_Accion, shift_base); double low_v  = iLow(s, TF_Accion, shift_base);
+            if(opsToro && g_pares[i].max_toro > 0.0 && high_v > 0) { g_pares[i].max_toro = MathMax(g_pares[i].max_toro, high_v); g_pares[i].min_toro = MathMin(g_pares[i].min_toro, low_v); }
+            if(opsOso && g_pares[i].max_oso > 0.0 && high_v > 0) { g_pares[i].max_oso = MathMax(g_pares[i].max_oso, high_v); g_pares[i].min_oso = MathMin(g_pares[i].min_oso, low_v); }
+         }
+      } 
+      double bid_sincronizado = iClose(s, TF_Accion, shift_base); if (bid_sincronizado <= 0.0) continue;
+      
+      bool serieCompleta = true;
+      for(int k=0; k<g_numTFs; k++) {
+         int lookback_velas = MathMax(1, (PeriodSeconds(g_tfsArray[k]) / PeriodSeconds(TF_Accion)) * g_lookbackArray[k]);
+         datetime time_pasado = target_time - (lookback_velas * PeriodSeconds(TF_Accion));
+         int shift_pasado = iBarShift(s, TF_Accion, time_pasado, false); if(shift_pasado < 0) { serieCompleta = false; break; }
+         double opN_sincronizado = iClose(s, TF_Accion, shift_pasado); if(opN_sincronizado <= 0.0) { serieCompleta = false; break; }
+         g_deltaNominal[i].cols[k] = (bid_sincronizado - opN_sincronizado) / g_pares[i].divisorPips;
+      }
+      if(serieCompleta) { parValido[i] = true; paresActivos++; }
+   }
+   
+   int umbralMinimo = MathMax(1, (int)(g_numPares * 0.70)); if(paresActivos < umbralMinimo) return; 
+   double min_div_cuad = 1.0 / (g_numPares * g_numPares); double fppTemp[]; ArrayResize(fppTemp, g_numPares); 
+   for(int k=0; k<g_numTFs; k++) {
+      double pipsTotales = 0; for(int i=0; i<g_numPares; i++) { if(parValido[i]) pipsTotales += MathAbs(g_deltaNominal[i].cols[k]); }
+      double sumaFtempNeta = 0; ArrayInitialize(fppTemp, 0.0); double pipsTotalesSafe = (pipsTotales > 0) ? (pipsTotales * g_numPares) : 1.0; 
+      for(int i=0; i<g_numPares; i++) { if(parValido[i]) { fppTemp[i] = g_deltaNominal[i].cols[k] / pipsTotalesSafe; sumaFtempNeta += fppTemp[i]; } }
+      double absSumaFtemp = MathAbs(sumaFtempNeta); double divCuad = MathMax(absSumaFtemp * absSumaFtemp, min_div_cuad);
+      
+      double fppOriginal[]; ArrayResize(fppOriginal, g_numPares); ArrayInitialize(fppOriginal, 0.0);
+      double sumaAbsOriginal = 0.0; double sumaRelOriginal = 0.0;
+      for(int i=0; i<g_numPares; i++) {
+         if(!parValido[i]) continue;
+         fppOriginal[i] = fppTemp[i] / divCuad; sumaAbsOriginal += MathAbs(fppOriginal[i]); sumaRelOriginal += fppOriginal[i];
+      }
+      double k_kuramoto = (sumaAbsOriginal > 0.0) ? (sumaRelOriginal / sumaAbsOriginal) : 0.0;
+      double sigma_acople = 0.25; 
+      for(int i=0; i<g_numPares; i++) {
+         if(!parValido[i]) continue;
+         double diferencia_fase = k_kuramoto - fppOriginal[i]; double fppVal = fppOriginal[i] + (sigma_acople * MathTanh(diferencia_fase));
+         if(k==0) { g_pares[i].fpp.head_fast = (g_pares[i].fpp.head_fast - 1 + 500) % 500; g_pares[i].fpp.fast[g_pares[i].fpp.head_fast] = fppVal; }
+         if(k==1) { g_pares[i].fpp.head_mid = (g_pares[i].fpp.head_mid - 1 + 500) % 500; g_pares[i].fpp.mid[g_pares[i].fpp.head_mid] = fppVal; }
+         if(k==2) { g_pares[i].fpp.head_slow = (g_pares[i].fpp.head_slow - 1 + 500) % 500; g_pares[i].fpp.slow[g_pares[i].fpp.head_slow] = fppVal; }
+      }
+   }
+   g_velasContadas++;
+    
+   datetime ultima_vela_cerrada = iTime(_Symbol, TF_Accion, 1); bool es_tiempo_real = (target_time >= ultima_vela_cerrada); 
+   if(es_tiempo_real) RegistrarEquitySnapshot(); 
+   double capital = AccountInfoDouble(ACCOUNT_BALANCE); double lote_base_por_equidad = (capital / 1000.0) * Riesgo_Base_Por_1000;
+
+   for(int i=0; i<g_numPares; i++) {
+      if(!parValido[i] || !g_pares[i].esOperable || !g_pares[i].cfg.configurado) continue; 
+      
+      string s = g_pares[i].simbolo;
+      double zscore_base_toro_in=0, zscore_base_toro_out=0, zscore_base_oso_in=0, zscore_base_oso_out=0; double v_in_toro=0, a_in_toro=0, v_out_toro=0, a_out_toro=0; double v_in_oso=0, a_in_oso=0, v_out_oso=0, a_out_oso=0;     
+
+      bool gatillo_toro_in = ActualizarCinematicaCerebro(g_pares[i].c_toro_in, g_pares[i].fpp, g_pares[i].cfg.toro.marco_in, (int)g_pares[i].cfg.toro.res_in, g_pares[i].cfg.toro.pz_in, g_pares[i].cfg.toro.base_in, g_pares[i].cfg.toro.tension_in, g_pares[i].cfg.toro.armado_in, g_pares[i].cfg.toro.chasquido_in, BUSQUEDA_VALLE_ALCISTA, false, zscore_base_toro_in, v_in_toro, a_in_toro, s + "-TORO-IN");
+      bool gatillo_toro_out = ActualizarCinematicaCerebro(g_pares[i].c_toro_out, g_pares[i].fpp, g_pares[i].cfg.toro.marco_out, (int)g_pares[i].cfg.toro.res_out, g_pares[i].cfg.toro.pz_out, g_pares[i].cfg.toro.base_out, g_pares[i].cfg.toro.tension_out, g_pares[i].cfg.toro.armado_out, g_pares[i].cfg.toro.chasquido_out, BUSQUEDA_PICO_BAJISTA, true, zscore_base_toro_out, v_out_toro, a_out_toro, s + "-TORO-OUT");
+      bool gatillo_oso_in = ActualizarCinematicaCerebro(g_pares[i].c_oso_in, g_pares[i].fpp, g_pares[i].cfg.oso.marco_in, (int)g_pares[i].cfg.oso.res_in, g_pares[i].cfg.oso.pz_in, g_pares[i].cfg.oso.base_in, g_pares[i].cfg.oso.tension_in, g_pares[i].cfg.oso.armado_in, g_pares[i].cfg.oso.chasquido_in, BUSQUEDA_PICO_BAJISTA, false, zscore_base_oso_in, v_in_oso, a_in_oso, s + "-OSO-IN");
+      bool gatillo_oso_out = ActualizarCinematicaCerebro(g_pares[i].c_oso_out, g_pares[i].fpp, g_pares[i].cfg.oso.marco_out, (int)g_pares[i].cfg.oso.res_out, g_pares[i].cfg.oso.pz_out, g_pares[i].cfg.oso.base_out, g_pares[i].cfg.oso.tension_out, g_pares[i].cfg.oso.armado_out, g_pares[i].cfg.oso.chasquido_out, BUSQUEDA_VALLE_ALCISTA, true, zscore_base_oso_out, v_out_oso, a_out_oso, s + "-OSO-OUT");
+
+      ENUM_MARCO_FSM t1_toro = MARCO_MID, t2_toro = MARCO_SLOW; if(g_pares[i].cfg.toro.marco_in == MARCO_FAST) { t1_toro = MARCO_MID; t2_toro = MARCO_SLOW; } else if(g_pares[i].cfg.toro.marco_in == MARCO_MID) { t1_toro = MARCO_FAST; t2_toro = MARCO_SLOW; } else if(g_pares[i].cfg.toro.marco_in == MARCO_SLOW) { t1_toro = MARCO_FAST; t2_toro = MARCO_MID; }
+      double z_macro_1_toro=0, z_macro_2_toro=0, dummy_t=0; ActualizarCinematicaCerebro(g_pares[i].c_toro_macro_1, g_pares[i].fpp, t1_toro, (int)g_pares[i].cfg.toro.res_in, g_pares[i].cfg.toro.pz_in, g_pares[i].cfg.toro.base_in, g_pares[i].cfg.toro.tension_in, 0, 0, BUSQUEDA_VALLE_ALCISTA, false, z_macro_1_toro, dummy_t, dummy_t, ""); ActualizarCinematicaCerebro(g_pares[i].c_toro_macro_2, g_pares[i].fpp, t2_toro, (int)g_pares[i].cfg.toro.res_in, g_pares[i].cfg.toro.pz_in, g_pares[i].cfg.toro.base_in, g_pares[i].cfg.toro.tension_in, 0, 0, BUSQUEDA_VALLE_ALCISTA, false, z_macro_2_toro, dummy_t, dummy_t, "");
+      ENUM_MARCO_FSM t1_oso = MARCO_MID, t2_oso = MARCO_SLOW; if(g_pares[i].cfg.oso.marco_in == MARCO_FAST) { t1_oso = MARCO_MID; t2_oso = MARCO_SLOW; } else if(g_pares[i].cfg.oso.marco_in == MARCO_MID) { t1_oso = MARCO_FAST; t2_oso = MARCO_SLOW; } else if(g_pares[i].cfg.oso.marco_in == MARCO_SLOW) { t1_oso = MARCO_FAST; t2_oso = MARCO_MID; }
+      double z_macro_1_oso=0, z_macro_2_oso=0, dummy_o=0; ActualizarCinematicaCerebro(g_pares[i].c_oso_macro_1, g_pares[i].fpp, t1_oso, (int)g_pares[i].cfg.oso.res_in, g_pares[i].cfg.oso.pz_in, g_pares[i].cfg.oso.base_in, g_pares[i].cfg.oso.tension_in, 0, 0, BUSQUEDA_PICO_BAJISTA, false, z_macro_1_oso, dummy_o, dummy_o, ""); ActualizarCinematicaCerebro(g_pares[i].c_oso_macro_2, g_pares[i].fpp, t2_oso, (int)g_pares[i].cfg.oso.res_in, g_pares[i].cfg.oso.pz_in, g_pares[i].cfg.oso.base_in, g_pares[i].cfg.oso.tension_in, 0, 0, BUSQUEDA_PICO_BAJISTA, false, z_macro_2_oso, dummy_o, dummy_o, "");
+
+      if(!es_tiempo_real) continue;
+
+      bool opsToro = (g_pares[i].ticket_toro > 0); bool opsOso  = (g_pares[i].ticket_oso > 0);
+      double costo_trx_dinamico = g_pares[i].spread_asumido_ia;
+
+      // =========================================================
+      // 🟢 GESTOR DUAL SUPERVIVENCIA ML: COMPRA (LONG) V12.01
+      // MATRIX RIDGE K-ABORT (Fid Unificada + Guarda Inmunidad + ΔT Vivo)
+      // =========================================================
+      bool salir_toro = false; ENUM_ORIGEN_MENSAJE origen_cierre_toro = ORIGEN_SALIDA_SAR;
+
+      if(opsToro) {
+          int velas_abiertas = iBarShift(s, TF_Accion, g_pares[i].time_in_toro); if(velas_abiertas < 1) velas_abiertas = 1;
+          
+          double pips_mult = 1.0 / g_pares[i].divisorPips; 
+          double mae_previo = (g_pares[i].min_toro - g_pares[i].p_in_toro) * pips_mult; 
+          double mfe_actual = (g_pares[i].max_toro - g_pares[i].p_in_toro) * pips_mult;
+          double profit_apertura = ((iOpen(s, TF_Accion, 0) - g_pares[i].p_in_toro) * pips_mult) - costo_trx_dinamico;
+          
+          double prof_cnt_toro = ((iOpen(s, TF_Accion, 1) - g_pares[i].p_in_toro) * pips_mult) - costo_trx_dinamico; // H-EA-TG-01: cuenta el open de la vela cerrada (Python: opens[i])
+          if(prof_cnt_toro > 0.0) g_pares[i].t_gain_toro++; else g_pares[i].t_loss_toro++;
+          EmitirResultadoVela(s, "LONG", g_pares[i].ticket_toro, profit_apertura > 0.0); 
+          
+          double tolerancia_fijada = (g_pares[i].ml_toro.tolerancia_vida > 0.0) ? g_pares[i].ml_toro.tolerancia_vida : 1.5;
+          double lim_T_seguro = (g_pares[i].ml_toro.limite_tiempo > 0) ? (g_pares[i].ml_toro.limite_tiempo * tolerancia_fijada) + 1e-9 : 50.0;
+          
+          // 1. Brazo Ofensivo / Cierres Cursados
+          if(!salir_toro && g_pares[i].ml_toro.activado) {
+              if(g_pares[i].ml_toro.limite_tiempo > 0 && velas_abiertas > lim_T_seguro) { 
+                 salir_toro = true; origen_cierre_toro = ORIGEN_TIME_STOP; 
+              }
+              else if(g_pares[i].v_req_toro > 0.0) {
+                  double friccion_actual = 1.0 + (MathAbs(mae_previo) / 10.0);
+                  double target_req = (g_pares[i].v_req_toro * velas_abiertas * friccion_actual) + (MathAbs(mae_previo) * 0.5); target_req = MathMax(target_req, costo_trx_dinamico + 1.0);  
+                  if(profit_apertura >= target_req) { salir_toro = true; origen_cierre_toro = ORIGEN_SMART_TRAILING; }
+              }
+          }
+          if(!salir_toro && gatillo_toro_out) { salir_toro = true; origen_cierre_toro = ORIGEN_SALIDA_SAR; }
+
+          // 2. Brazo Defensivo / Ridge 2 de Supervivencia
+          if(g_pares[i].ml_toro.activado) {
+                  double mad_v = g_pares[i].ml_toro.mad_v; if(mad_v < 1e-9) mad_v = 1e-9;
+                  double v_ef = MathMax((double)velas_abiertas, 3.0);
+                  
+                  double Fid = 0.5; 
+                  if(velas_abiertas > 2) { 
+                     double bruto_toro = profit_apertura + costo_trx_dinamico;
+                     double m_mfe_toro = MathMax(mfe_actual, bruto_toro);
+                     double m_mae_toro = MathMin(mae_previo, bruto_toro);
+                     double v_cruda_toro = (m_mfe_toro - MathAbs(m_mae_toro)) / (v_ef * (1.0 + (MathAbs(m_mae_toro) / 10.0)));
+                     double V_z = (v_cruda_toro - g_pares[i].ml_toro.mediana_v) / (mad_v + 1e-9);
+                     Fid = (MathTanh(V_z - g_pares[i].z_pred_toro) + 1.0) / 2.0; 
+                  }
+                  
+                  double D_ = 1.0 / (1.0 + (MathAbs(mae_previo) / (mad_v * v_ef + 1e-9)));
+                  double Theta = 1.0 - MathMin((double)velas_abiertas / lim_T_seguro, 1.0);
+                  double C_ = (MathTanh(mfe_actual / (mad_v * v_ef + 1e-9)) + 1.0) / 2.0;
+                  
+                  double z_pred_norm = MathTanh(g_pares[i].z_pred_toro);
+                  double v_ef_norm   = MathTanh(v_ef / lim_T_seguro);
+                  double inter_TD = Theta * D_; 
+                  double inter_FD = Fid * D_;
+
+                  double T_Pred_Live = (g_pares[i].superv_toro.w_superv[0] * Fid) +
+                                       (g_pares[i].superv_toro.w_superv[1] * D_) +
+                                       (g_pares[i].superv_toro.w_superv[2] * Theta) +
+                                       (g_pares[i].superv_toro.w_superv[3] * C_) +
+                                       (g_pares[i].superv_toro.w_superv[4] * z_pred_norm) +
+                                       (g_pares[i].superv_toro.w_superv[5] * v_ef_norm) +
+                                       (g_pares[i].superv_toro.w_superv[6] * inter_TD) +
+                                       (g_pares[i].superv_toro.w_superv[7] * inter_FD);
+
+                  if(g_pares[i].superv_toro.n_features == 10) {
+                      double bruto_s = profit_apertura + costo_trx_dinamico;
+                      double m_mfe_s = MathMax(mfe_actual, bruto_s);
+                      double m_mae_s = MathMin(mae_previo, bruto_s);
+                      double t_obs_s = CalcularTScoreTrade(m_mfe_s, m_mae_s, profit_apertura, (double)g_pares[i].t_gain_toro, (double)g_pares[i].t_loss_toro, costo_trx_dinamico);
+                      double dT = MathMin(MathMax(t_obs_s - g_pares[i].t_hat0_toro, -1.0), 1.0);
+                      T_Pred_Live += (g_pares[i].superv_toro.w_superv[8] * dT) +
+                                     (g_pares[i].superv_toro.w_superv[9] * (dT * Theta));
+                  }
+                  
+                  T_Pred_Live += g_pares[i].superv_toro.b_superv;
+                  
+                  g_pares[i].diag_toro.fid = Fid; g_pares[i].diag_toro.d_ = D_; g_pares[i].diag_toro.theta = Theta; g_pares[i].diag_toro.c_ = C_;
+                  g_pares[i].diag_toro.t_pred = T_Pred_Live;
+                  
+                  // DISPARADOR CONTINUOUS-RIDGE V12.01 💥 (Guarda anti-asfixia H-EA-01 / H-EA-04 resuelto)
+                  int inm_toro = (g_pares[i].superv_toro.inmunidad_velas >= 0) ? g_pares[i].superv_toro.inmunidad_velas : 2;
+                  if(!salir_toro && velas_abiertas > inm_toro && T_Pred_Live < g_pares[i].superv_toro.k_abortar) {
+                       salir_toro = true; 
+                       origen_cierre_toro = ORIGEN_SUPERVIVENCIA;
+                  }
+          }
+      }
+      
+      // 3. Sensor de Entrada TORO (Ridge 1 Dual: Cabeza A + Cabeza B)
+      if(!opsToro && gatillo_toro_in && !ExisteOrdenPendiente(i, MSG_APERTURA_COMPRA)) {
+         bool autorizado_ml = true; double vreq_calc = 0.0; double zpred_calc = 0.0; double that0_calc = 0.0;
+         if(g_pares[i].ml_toro.activado) {
+            double X_ML[10]; 
+            X_ML[0] = zscore_base_toro_in; X_ML[1] = v_in_toro; X_ML[2] = a_in_toro; X_ML[3] = MathSin(MathArctan2(X_ML[1], X_ML[0])); 
+            X_ML[4] = zscore_base_toro_out; X_ML[5] = v_out_toro; X_ML[6] = a_out_toro; X_ML[7] = MathSin(MathArctan2(X_ML[5], X_ML[4])); 
+            X_ML[8] = z_macro_1_toro; X_ML[9] = z_macro_2_toro;
+            
+            double Z_pred = Evaluar_Jefe_Riesgos_Ridge(X_ML, g_pares[i].ml_toro.w, g_pares[i].ml_toro.bias);
+            if(Z_pred < g_pares[i].ml_toro.umbral) autorizado_ml = false; 
+            else { 
+                zpred_calc = Z_pred; 
+                vreq_calc = ((Z_pred * g_pares[i].ml_toro.mad_v) + g_pares[i].ml_toro.mediana_v) * g_pares[i].ml_toro.ratio_captura; 
+                if(g_pares[i].ml_toro.tam_modo != 0) vreq_calc = vreq_calc * LabEscalaTamano(g_pares[i].ml_toro, X_ML, LabActividad(s, 1, MathRound(1.0 / g_pares[i].divisorPips))); // LAB-V7
+                
+                if(g_pares[i].ml_toro.cabeza_t_activa) {
+                    double T_raw = Evaluar_Jefe_Riesgos_Ridge(X_ML, g_pares[i].ml_toro.w_T, g_pares[i].ml_toro.bias_T);
+                    if(T_raw < g_pares[i].ml_toro.t_min_admision) autorizado_ml = false;
+                    else that0_calc = MathMin(MathMax(T_raw, 0.0), 1.0);
+                }
+            }
+         }
+         if(autorizado_ml) {
+             g_pares[i].t_hat0_toro = that0_calc;
+             g_pares[i].t_gain_toro = 0; g_pares[i].t_loss_toro = 0;
+             EncolarMensaje(i, MSG_APERTURA_COMPRA, ORIGEN_ENTRADA_SAR, 0, lote_base_por_equidad * MathAbs(zscore_base_toro_in), g_pares[i].magicToro, zpred_calc, vreq_calc, that0_calc);
+         }
+      } else if(opsToro && salir_toro) EncolarCierresPorMagic(i, g_pares[i].magicToro, origen_cierre_toro);
+
+      // =========================================================
+      // 🔴 GESTOR DUAL SUPERVIVENCIA ML: VENTA (SHORT) V12.01
+      // MATRIX RIDGE K-ABORT (Fid Unificada + Guarda Inmunidad + ΔT Vivo)
+      // =========================================================
+      bool salir_oso = false; ENUM_ORIGEN_MENSAJE origen_cierre_oso = ORIGEN_SALIDA_SAR;
+
+      if(opsOso) {
+          int velas_abiertas = iBarShift(s, TF_Accion, g_pares[i].time_in_oso); if(velas_abiertas < 1) velas_abiertas = 1;
+          
+          double pips_mult = 1.0 / g_pares[i].divisorPips; 
+          double mae_previo = (g_pares[i].p_in_oso - g_pares[i].max_oso) * pips_mult; 
+          double mfe_actual = (g_pares[i].p_in_oso - g_pares[i].min_oso) * pips_mult;
+          double profit_apertura = ((g_pares[i].p_in_oso - iOpen(s, TF_Accion, 0)) * pips_mult) - costo_trx_dinamico;
+          
+          double prof_cnt_oso = ((g_pares[i].p_in_oso - iOpen(s, TF_Accion, 1)) * pips_mult) - costo_trx_dinamico; // H-EA-TG-01: cuenta el open de la vela cerrada (Python: opens[i])
+          if(prof_cnt_oso > 0.0) g_pares[i].t_gain_oso++; else g_pares[i].t_loss_oso++;
+          EmitirResultadoVela(s, "SHORT", g_pares[i].ticket_oso, profit_apertura > 0.0); 
+          
+          double tolerancia_fijada = (g_pares[i].ml_oso.tolerancia_vida > 0.0) ? g_pares[i].ml_oso.tolerancia_vida : 1.5;
+          double lim_T_seguro = (g_pares[i].ml_oso.limite_tiempo > 0) ? (g_pares[i].ml_oso.limite_tiempo * tolerancia_fijada) + 1e-9 : 50.0;
+          
+          // 1. Brazo Ofensivo / Cierres Cursados
+          if(!salir_oso && g_pares[i].ml_oso.activado) {
+              if(g_pares[i].ml_oso.limite_tiempo > 0 && velas_abiertas > lim_T_seguro) { 
+                  salir_oso = true; origen_cierre_oso = ORIGEN_TIME_STOP; 
+              }
+              else if(g_pares[i].v_req_oso > 0.0) {
+                  double friccion_actual = 1.0 + (MathAbs(mae_previo) / 10.0);
+                  double target_req = (g_pares[i].v_req_oso * velas_abiertas * friccion_actual) + (MathAbs(mae_previo) * 0.5); target_req = MathMax(target_req, costo_trx_dinamico + 1.0);  
+                  if(profit_apertura >= target_req) { salir_oso = true; origen_cierre_oso = ORIGEN_SMART_TRAILING; }
+              }
+          }
+          if(!salir_oso && gatillo_oso_out) { salir_oso = true; origen_cierre_oso = ORIGEN_SALIDA_SAR; }
+
+          // 2. Brazo Defensivo / Ridge 2 de Supervivencia
+          if(g_pares[i].ml_oso.activado) {
+                  double mad_v = g_pares[i].ml_oso.mad_v; if(mad_v < 1e-9) mad_v = 1e-9;
+                  double v_ef = MathMax((double)velas_abiertas, 3.0);
+                  
+                  double Fid = 0.5; 
+                  if(velas_abiertas > 2) { 
+                      double bruto_oso = profit_apertura + costo_trx_dinamico;
+                      double m_mfe_oso = MathMax(mfe_actual, bruto_oso);
+                      double m_mae_oso = MathMin(mae_previo, bruto_oso);
+                      double v_cruda_oso = (m_mfe_oso - MathAbs(m_mae_oso)) / (v_ef * (1.0 + (MathAbs(m_mae_oso) / 10.0)));
+                      double V_z = (v_cruda_oso - g_pares[i].ml_oso.mediana_v) / (mad_v + 1e-9);
+                      Fid = (MathTanh(V_z - g_pares[i].z_pred_oso) + 1.0) / 2.0; 
+                  }
+                  
+                  double D_ = 1.0 / (1.0 + (MathAbs(mae_previo) / (mad_v * v_ef + 1e-9)));
+                  double Theta = 1.0 - MathMin((double)velas_abiertas / lim_T_seguro, 1.0);
+                  double C_ = (MathTanh(mfe_actual / (mad_v * v_ef + 1e-9)) + 1.0) / 2.0;
+                  
+                  double z_pred_norm = MathTanh(g_pares[i].z_pred_oso);
+                  double v_ef_norm   = MathTanh(v_ef / lim_T_seguro);
+                  double inter_TD = Theta * D_; 
+                  double inter_FD = Fid * D_;
+
+                  double T_Pred_Live = (g_pares[i].superv_oso.w_superv[0] * Fid) +
+                                       (g_pares[i].superv_oso.w_superv[1] * D_) +
+                                       (g_pares[i].superv_oso.w_superv[2] * Theta) +
+                                       (g_pares[i].superv_oso.w_superv[3] * C_) +
+                                       (g_pares[i].superv_oso.w_superv[4] * z_pred_norm) +
+                                       (g_pares[i].superv_oso.w_superv[5] * v_ef_norm) +
+                                       (g_pares[i].superv_oso.w_superv[6] * inter_TD) +
+                                       (g_pares[i].superv_oso.w_superv[7] * inter_FD);
+
+                  if(g_pares[i].superv_oso.n_features == 10) {
+                      double bruto_s = profit_apertura + costo_trx_dinamico;
+                      double m_mfe_s = MathMax(mfe_actual, bruto_s);
+                      double m_mae_s = MathMin(mae_previo, bruto_s);
+                      double t_obs_s = CalcularTScoreTrade(m_mfe_s, m_mae_s, profit_apertura, (double)g_pares[i].t_gain_oso, (double)g_pares[i].t_loss_oso, costo_trx_dinamico);
+                      double dT = MathMin(MathMax(t_obs_s - g_pares[i].t_hat0_oso, -1.0), 1.0);
+                      T_Pred_Live += (g_pares[i].superv_oso.w_superv[8] * dT) +
+                                     (g_pares[i].superv_oso.w_superv[9] * (dT * Theta));
+                  }
+                  
+                  T_Pred_Live += g_pares[i].superv_oso.b_superv;
+                  
+                  g_pares[i].diag_oso.fid = Fid; g_pares[i].diag_oso.d_ = D_; g_pares[i].diag_oso.theta = Theta; g_pares[i].diag_oso.c_ = C_;
+                  g_pares[i].diag_oso.t_pred = T_Pred_Live;
+                  
+                  // DISPARADOR CONTINUOUS-RIDGE V12.01 💥 (Guarda anti-asfixia H-EA-01 / H-EA-04 y variable H-EA-03 resuelto)
+                  int inm_oso = (g_pares[i].superv_oso.inmunidad_velas >= 0) ? g_pares[i].superv_oso.inmunidad_velas : 2;
+                  if(!salir_oso && velas_abiertas > inm_oso && T_Pred_Live < g_pares[i].superv_oso.k_abortar) { 
+                      salir_oso = true; 
+                      origen_cierre_oso = ORIGEN_SUPERVIVENCIA; 
+                  }
+          }
+      }
+
+      // 3. Sensor de Entrada OSO (Ridge 1 Dual: Cabeza A + Cabeza B)
+      if(!opsOso && gatillo_oso_in && !ExisteOrdenPendiente(i, MSG_APERTURA_VENTA)) {
+         bool autorizado_ml = true; double vreq_calc_oso = 0.0; double zpred_calc_oso = 0.0; double that0_calc_oso = 0.0;
+         if(g_pares[i].ml_oso.activado) {
+            double X_ML[10]; 
+            X_ML[0] = zscore_base_oso_in; X_ML[1] = v_in_oso; X_ML[2] = a_in_oso; X_ML[3] = MathSin(MathArctan2(X_ML[1], X_ML[0])); 
+            X_ML[4] = zscore_base_oso_out; X_ML[5] = v_out_oso; X_ML[6] = a_out_oso; X_ML[7] = MathSin(MathArctan2(X_ML[5], X_ML[4])); 
+            X_ML[8] = z_macro_1_oso; X_ML[9] = z_macro_2_oso;
+            
+            double Z_pred = Evaluar_Jefe_Riesgos_Ridge(X_ML, g_pares[i].ml_oso.w, g_pares[i].ml_oso.bias);
+            if(Z_pred < g_pares[i].ml_oso.umbral) autorizado_ml = false; 
+            else { 
+                zpred_calc_oso = Z_pred; 
+                vreq_calc_oso = ((Z_pred * g_pares[i].ml_oso.mad_v) + g_pares[i].ml_oso.mediana_v) * g_pares[i].ml_oso.ratio_captura; 
+                if(g_pares[i].ml_oso.tam_modo != 0) vreq_calc_oso = vreq_calc_oso * LabEscalaTamano(g_pares[i].ml_oso, X_ML, LabActividad(s, 1, MathRound(1.0 / g_pares[i].divisorPips))); // LAB-V7
+                
+                if(g_pares[i].ml_oso.cabeza_t_activa) {
+                    double T_raw_oso = Evaluar_Jefe_Riesgos_Ridge(X_ML, g_pares[i].ml_oso.w_T, g_pares[i].ml_oso.bias_T);
+                    if(T_raw_oso < g_pares[i].ml_oso.t_min_admision) autorizado_ml = false;
+                    else that0_calc_oso = MathMin(MathMax(T_raw_oso, 0.0), 1.0);
+                }
+            }
+         }
+         if(autorizado_ml) {
+             g_pares[i].t_hat0_oso = that0_calc_oso;
+             g_pares[i].t_gain_oso = 0; g_pares[i].t_loss_oso = 0;
+             EncolarMensaje(i, MSG_APERTURA_VENTA, ORIGEN_ENTRADA_SAR, 0, lote_base_por_equidad * MathAbs(zscore_base_oso_in), g_pares[i].magicOso, zpred_calc_oso, vreq_calc_oso, that0_calc_oso);
+         }
+      } else if(opsOso && salir_oso) EncolarCierresPorMagic(i, g_pares[i].magicOso, origen_cierre_oso);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| TRADUCTOR UNIVERSAL DE TIMEFRAMES                                |
+//+------------------------------------------------------------------+
+ENUM_TIMEFRAMES StringToTF(string s) {
+   StringTrimLeft(s); StringTrimRight(s); 
+   if(s == "PERIOD_M1")  return PERIOD_M1;  if(s == "PERIOD_M5")  return PERIOD_M5;
+   if(s == "PERIOD_M15") return PERIOD_M15; if(s == "PERIOD_M30") return PERIOD_M30;
+   if(s == "PERIOD_H1")  return PERIOD_H1;  if(s == "PERIOD_H2")  return PERIOD_H2;
+   if(s == "PERIOD_H4")  return PERIOD_H4;  if(s == "PERIOD_H6")  return PERIOD_H6;
+   if(s == "PERIOD_D1")  return PERIOD_D1;  
+   return PERIOD_D1; 
+}
+
+//+------------------------------------------------------------------+
+//| 🚀 INIT Y ESTADO MAESTRO (STATE MACHINE & TIMER)                 |
+//+------------------------------------------------------------------+
+int OnInit() {
+   Print(">>> NexusHybrid V12.01 DUAL CONTINUOUS ML CORE - ADAPTATIVE SSOT 3.3 CERTIFIED <<<");
+   
+   if(GlobalVariableCheck(g_mutex_name)) {
+      double marca_previa = GlobalVariableGet(g_mutex_name);
+      double antiguedad = (double)TimeLocal() - marca_previa;
+      if(antiguedad < MUTEX_TTL_SEGUNDOS) {
+         Alert("🚨 CRÍTICO: Mutex MQL — instancia activa detectada (antigüedad " + DoubleToString(antiguedad,0) + "s).");
+         return INIT_FAILED;
+      } else {
+         Telemetria(LOG_LEVEL_0_PROD, "⚠️ [V12.01] Mutex obsoleto detectado (antigüedad " + DoubleToString(antiguedad,0) + "s) — liberando.");
+         GlobalVariableDel(g_mutex_name);
+      }
+   }
+   GlobalVariableTemp(g_mutex_name); GlobalVariableSet(g_mutex_name, (double)TimeLocal());
+   if(AccountInfoInteger(ACCOUNT_MARGIN_MODE) != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING) return INIT_FAILED; 
+   
+   StringSplit(Pares28, ',', g_paresArray); StringSplit(MarcosTemporales, ',', g_tfsStrings);
+   g_numPares = ArraySize(g_paresArray); g_numTFs = ArraySize(g_tfsStrings); ArrayResize(g_tfsArray, g_numTFs); for(int k=0; k<g_numTFs; k++) g_tfsArray[k] = StringToTF(g_tfsStrings[k]);
+   string lbStr[]; StringSplit(Lookback_Velas_FPP, ',', lbStr); ArrayResize(g_lookbackArray, g_numTFs); for(int k=0; k<g_numTFs; k++) g_lookbackArray[k] = (k < ArraySize(lbStr)) ? (int)StringToInteger(lbStr[k]) : 1; 
+   ArrayResize(g_pares, g_numPares); ArrayResize(g_deltaNominal, g_numPares);
+   
+   for(int i=0; i<g_numPares; i++) {
+      g_pares[i].simbolo = g_paresArray[i]; 
+      if(!MQLInfoInteger(MQL_TESTER)) SymbolSelect(g_pares[i].simbolo, true); 
+      g_pares[i].spread_asumido_ia = 2.0; 
+      g_pares[i].divisorPips = SymbolInfoDouble(g_pares[i].simbolo, SYMBOL_POINT);
+      int dg = (int)SymbolInfoInteger(g_pares[i].simbolo, SYMBOL_DIGITS); if(dg==3 || dg==5) g_pares[i].divisorPips *= 10;
+      int hash_sym = ObtenerHashSimbolo(g_pares[i].simbolo);
+      
+      g_pares[i].magicToro = 3000000 + (hash_sym % 100000) * 10 + 1; 
+      g_pares[i].magicOso  = 3000000 + (hash_sym % 100000) * 10 + 2;
+      
+      g_pares[i].ticket_toro = 0; g_pares[i].ticket_oso = 0; 
+      g_pares[i].fpp.head_fast = 0; g_pares[i].fpp.head_mid = 0; g_pares[i].fpp.head_slow = 0;
+      ArrayInitialize(g_pares[i].fpp.fast, 0.0); ArrayInitialize(g_pares[i].fpp.mid, 0.0); ArrayInitialize(g_pares[i].fpp.slow, 0.0);
+      
+      InitCerebro(g_pares[i].c_toro_in); InitCerebro(g_pares[i].c_toro_out);
+      InitCerebro(g_pares[i].c_oso_in); InitCerebro(g_pares[i].c_oso_out);
+      InitCerebro(g_pares[i].c_toro_macro_1); InitCerebro(g_pares[i].c_toro_macro_2);
+      InitCerebro(g_pares[i].c_oso_macro_1); InitCerebro(g_pares[i].c_oso_macro_2);
+      
+      g_pares[i].ml_toro.activado = false; g_pares[i].ml_oso.activado = false;
+      g_pares[i].ml_toro.cabeza_t_activa = false; g_pares[i].ml_toro.t_min_admision = 0.0;
+      g_pares[i].ml_oso.cabeza_t_activa  = false; g_pares[i].ml_oso.t_min_admision = 0.0;
+      g_pares[i].ml_toro.tam_modo = 0; g_pares[i].ml_oso.tam_modo = 0;   // LAB-V7: Ridge de tamaño apagado por defecto
+      g_pares[i].superv_toro.inmunidad_velas = 2; g_pares[i].superv_toro.n_features = 8;
+      g_pares[i].superv_oso.inmunidad_velas  = 2; g_pares[i].superv_oso.n_features  = 8;
+      
+      g_pares[i].t_hat0_toro = 0.0; g_pares[i].t_hat0_oso = 0.0;
+      g_pares[i].t_gain_toro = 0;   g_pares[i].t_loss_toro = 0;
+      g_pares[i].t_gain_oso  = 0;   g_pares[i].t_loss_oso  = 0;
+
+      ArrayResize(g_deltaNominal[i].cols, g_numTFs); 
+      
+      CargarConfiguracionesOptuna(i);
+      
+      if(ParesOperables == "AUTO" || ParesOperables == "TODOS") g_pares[i].esOperable = g_pares[i].cfg.configurado; else g_pares[i].esOperable = (StringFind(ParesOperables, g_pares[i].simbolo) >= 0);
+   }
+   SincronizarEstadosReales(); g_ultimo_heartbeat = TimeLocal(); EventSetTimer(1); return INIT_SUCCEEDED;
+}
+
+void OnDeinit(const int reason) { EventKillTimer(); GlobalVariableDel(g_mutex_name); }
+
+void OnTimer() {
+   if(g_boot_state == BOOT_READY && TimeLocal() - g_ultimo_heartbeat >= 60) {
+      g_ultimo_heartbeat = TimeLocal();
+      GlobalVariableSet(g_mutex_name, (double)TimeLocal());
+      for(int p=0; p<g_numPares; p++) {
+         if(g_pares[p].ticket_toro > 0) { 
+             if(GlobalVariableCheck(ObtenerGV_VREQ(g_pares[p].ticket_toro))) g_pares[p].v_req_toro = GlobalVariableGet(ObtenerGV_VREQ(g_pares[p].ticket_toro)); 
+             if(GlobalVariableCheck(ObtenerGV_ZPRED(g_pares[p].ticket_toro))) g_pares[p].z_pred_toro = GlobalVariableGet(ObtenerGV_ZPRED(g_pares[p].ticket_toro)); 
+             if(GlobalVariableCheck(ObtenerGV_THAT0(g_pares[p].ticket_toro))) g_pares[p].t_hat0_toro = GlobalVariableGet(ObtenerGV_THAT0(g_pares[p].ticket_toro));
+         }
+         if(g_pares[p].ticket_oso > 0) { 
+             if(GlobalVariableCheck(ObtenerGV_VREQ(g_pares[p].ticket_oso))) g_pares[p].v_req_oso = GlobalVariableGet(ObtenerGV_VREQ(g_pares[p].ticket_oso)); 
+             if(GlobalVariableCheck(ObtenerGV_ZPRED(g_pares[p].ticket_oso))) g_pares[p].z_pred_oso = GlobalVariableGet(ObtenerGV_ZPRED(g_pares[p].ticket_oso)); 
+             if(GlobalVariableCheck(ObtenerGV_THAT0(g_pares[p].ticket_oso))) g_pares[p].t_hat0_oso = GlobalVariableGet(ObtenerGV_THAT0(g_pares[p].ticket_oso));
+         }
+      }
+   }
+   
+   if(g_boot_state != BOOT_READY) {
+      if(g_boot_state == BOOT_REQUEST_DATA) { for(int i=0; i<g_numPares; i++) { datetime dummy[1]; CopyTime(g_pares[i].simbolo, TF_Accion, 0, BUFFER_CACHE, dummy); } g_boot_state = BOOT_WAIT_SYNC; return; }
+      if(g_boot_state == BOOT_WAIT_SYNC) {
+         bool todoListo = true; int tiempo_espera = (int)(TimeLocal() - g_ultimo_heartbeat);
+         for(int i=0; i<g_numPares; i++) {
+            if(!g_pares[i].esOperable) continue;
+            bool sinc = MQLInfoInteger(MQL_TESTER) ? (iBars(g_pares[i].simbolo, TF_Accion) >= BUFFER_CACHE) : (SeriesInfoInteger(g_pares[i].simbolo, TF_Accion, SERIES_SYNCHRONIZED));
+            if(!sinc) { if(tiempo_espera > 30) g_pares[i].esOperable = false; else { todoListo = false; break; } }
+         }
+         if(!todoListo) return; g_boot_state = BOOT_PROCESS_CHUNKS; return;
+      }
+      if(g_boot_state == BOOT_PROCESS_CHUNKS) {
+         int cuota_restante = CHUNK_SIZE;
+         while(g_shift_actual >= 1 && cuota_restante > 0) { AnalizarMercado(iTime(_Symbol, TF_Accion, g_shift_actual)); g_shift_actual--; cuota_restante--; }
+         if(g_shift_actual < 1) { g_ultimaVelaAccion = iTime(_Symbol, TF_Accion, 0); g_boot_state = BOOT_READY; Telemetria(LOG_LEVEL_0_PROD, "🚀 PRECARGA AL 100%. Motor Cuántico DUAL INSTITUCIONAL ONLINE."); }
+         return; 
+      }
+   }
+   g_timer_buzon++; if(g_timer_buzon >= 3) { g_timer_buzon = 0; if(g_numMensajes > 0) EjecutarBuzon(); }
+}
+
+void OnTick() {
+   if(g_boot_state != BOOT_READY) { if(MQLInfoInteger(MQL_TESTER)) OnTimer(); return; }
+   int current_positions = PositionsTotal(); if(current_positions != g_cached_positions) { SincronizarEstadosReales(); g_cached_positions = current_positions; }
+   datetime velaActual = iTime(_Symbol, TF_Accion, 0);
+   if(velaActual != g_ultimaVelaAccion) {
+      int velas_perdidas = 1; if(g_ultimaVelaAccion > 0) { velas_perdidas = iBarShift(_Symbol, TF_Accion, g_ultimaVelaAccion); if(velas_perdidas <= 0) velas_perdidas = 1; }
+      if(velas_perdidas > 500) velas_perdidas = 500; SincronizarEstadosReales(); 
+      for(int shift = velas_perdidas; shift >= 1; shift--) { AnalizarMercado(iTime(_Symbol, TF_Accion, shift)); }
+      g_ultimaVelaAccion = velaActual; EjecutarBuzon(); 
+   }
+}
+//+------------------------------------------------------------------+
