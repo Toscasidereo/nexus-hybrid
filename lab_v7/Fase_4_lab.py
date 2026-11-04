@@ -3,6 +3,20 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V7 V0.4 (2026-11-04) — MÉTRICA DE SELECCIÓN (orden del CRO: mejorar las métricas con las que Fase 4 selecciona, para comparar con las anteriores):
+#      • NEXUS_LAB_METRICA = final | v7. `final` (defecto) = Score_final, idéntico a main. `v7` reemplaza r[0] (el puntaje) por Score_v7
+#        en: gate de la base IS, escaneo de K (elige el K de mayor Score_v7 IS), puntaje OOS, ClaveRank/Score_flujo. Resto de r[...] intacto.
+#      • Kernels `simular_motor_{long,short}_superv_T_ix`: copia exacta de los originales + 2 salidas (vela de entrada y de salida por trade);
+#        las 4 primeras salidas son idénticas a las originales. El modo `final` no los usa.
+#      • DSR del escaneo de K: nt = cantidad de K de la grilla; sigma_sr = desvío del Sharpe de alfa entre esos K (pasada previa). Para base
+#        y OOS: nt = 1. NO deflaciona por la búsqueda de Fase 3 (Optuna): su N_t no llega a Fase 4. [PENDIENTE: N_t real, protocolo punto 3]
+#      • N mínimo de señales = el min_trades que ya usa cada evaluación (IS 20, OOS 30, base OOS 3), no N_MIN = 100 de la propuesta.
+#      • Close no está en el parquet: la escala h de Score_v7 se calcula con Open (declarado). Sin máscara de velas fantasma.
+#      • El reporte agrega las columnas Metrica, SF_IS, V7_IS, SF_OOS, V7_OOS (ambos puntajes sobre los MISMOS trades elegidos), para la
+#        comparación pareada. En `final` los V7_* quedan en NaN.
+#      • Ridge de entrada/Cabeza B y Ridge 2 siguen entrenando con T(t) / T_terminal. T_v2 como objetivo: NO implementado (H-V7-06).
+#      • Fase 3 (Optuna) sigue usando Score_final: los candidatos llegan filtrados por esa métrica.
+#
 # 📋 BITÁCORA LAB-V7 V0.3 (2026-11-04) — ALINEACIÓN DE LA CADENA (orden del CRO: "Alinea todas las fases de python, para que funcione el lab 7"):
 #      • Los kernels de la escala viven ahora en `lab_v7/lab_escala.py` (compartidos con `Fase_4_5_lab_A.py`); sin cambio de aritmética.
 #      • Los features sin(atan2(v, z)) de X10 se calculan con `lab_fase_nb` (misma tipificación float32 que el kernel de simulación y
@@ -251,6 +265,7 @@ from nexus_formulas_core import (
 )
 
 import nexus_tablero as TAB   # [TABLERO] fuente única de folds / IS-OOS / reserva ciega / MEMORIA_FIFO
+import v7_metricas as V7   # [LAB-V7 V0.4] Score_v7 / T_v2
 from lab_escala import lab_actividad_nb, lab_fase_nb, _lab_esc_A_nb, _lab_esc_B_nb   # [LAB-V7 V0.3] kernels compartidos con Fase_4_5_lab_A
 
 warnings.simplefilter('ignore')
@@ -319,13 +334,17 @@ MIN_TRADES_SUPERV_IS = 20 if _GATE_T_ACTIVO else MIN_OPS_IS_REPORTE
 LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' | 'B'
 LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
+LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' = Score_final (main) | 'v7' = Score_v7 en la selección
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
 assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
-LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO
+assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
+LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final')
+LAB_V7_OPCION = 'A'      # alfa neutral a la deriva local (opción A de la propuesta)   [DEFAULT / CRO-OVERRIDE]
+LAB_V7_R = 20            # réplicas del gemelo de captura (C3)                          [DEFAULT / CRO-OVERRIDE]
 ACT_VENTANA = 60
 ESCALA_MIN, ESCALA_MAX = 0.25, 4.0
 PERCENTILES_K_LAB = np.arange(0, 55, 5)
-TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
+TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
 COLS_REQ_FASE3 = ['Dir', 'Fold', 'Rank', '⚖️ BASE IN', '📊 ACUM IN', '⚙️ Arm_IN', '⚡ Chq_IN', '⚖️ BASE OUT', '📊 ACUM OUT', '⚙️ Arm_OUT', '⚡ Chq_OUT']
 MARCOS_VALIDOS = ('Fast', 'Mid', 'Slow')
 
@@ -1049,6 +1068,216 @@ def simular_motor_short_superv_T(
 # ==========================================================
 # 🚀 4. ESCANEO DE K_ABORTAR — VÍA SIMULADOR REAL, IS-ONLY
 # ==========================================================
+# [LAB-V7 V0.4] Copias de los simuladores con 2 salidas más (vela de entrada y de salida por trade). Solo las usa NEXUS_LAB_METRICA=v7.
+@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
+def simular_motor_long_superv_T_ix(
+    signos_in, extremo_in, sat_inf_in, acum_in, signos_out, extremo_out, sat_sup_out, acum_out,
+    z_base_in, in_v, in_a, z_base_out, out_v, out_a, z_macro_1, z_macro_2,
+    opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
+    armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
+    activar_ml, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
+    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v):
+
+    pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
+    t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False; T_hat0 = 0.0
+    mae_previo = 0.0; mfe_actual = 0.0; profit_apertura = 0.0
+
+    max_trades = (n_velas // 2) + 5
+    mfe_A = np.empty(max_trades, dtype=np.float32); mae_A = np.empty(max_trades, dtype=np.float32)
+    prof_A = np.empty(max_trades, dtype=np.float32); tscore_A = np.empty(max_trades, dtype=np.float32)
+    ent_A = np.empty(max_trades, dtype=np.int64); sal_A = np.empty(max_trades, dtype=np.int64)
+    cnt = 0
+    lim_T_seguro = (atrac_t * TOLERANCIA_VIDA_MEDIA) + 1e-9 if atrac_t > 0 else LIM_T_FALLBACK_VELAS
+
+    for i in range(1, n_velas - 1):
+        if pos == 1:
+            trade_tuvo_iteracion = True
+            if highs_arr[i] > max_v: max_v = highs_arr[i]
+            if lows_arr[i] < min_v: min_v = lows_arr[i]
+
+            if phantom_arr[i] == 0.0:
+                prof_vela = ((opens_arr[i] - p_in) * pips_mult) - spread_pips
+                if prof_vela > 0.0: t_gain += 1.0
+                else: t_loss += 1.0
+
+            velas_abiertas = max(float(i - idx_in + 1), 1.0)
+            mae_previo = (min_v - p_in) * pips_mult; mfe_actual = (max_v - p_in) * pips_mult
+            profit_apertura = ((opens_arr[i+1] - p_in) * pips_mult) - spread_pips
+            closed = False; m_mae = mae_previo
+
+            if activar_ml:
+                if atrac_t > 0 and velas_abiertas > lim_T_seguro:
+                    closed = True; m_mae = min(mae_previo, profit_apertura + spread_pips)
+                else:
+                    target_req = max((v_req * velas_abiertas * (1.0 + (abs(mae_previo) / 10.0))) + (abs(mae_previo) * 0.5), spread_pips + 1.0)
+                    if profit_apertura >= target_req: closed = True; m_mae = mae_previo
+            if not closed:
+                if signos_out[i] > 0 and extremo_out[i] >= (sat_sup_out[i] * armado_out) and acum_out[i] <= (extremo_out[i] * (1.0 - chasquido_out)):
+                    closed = True; m_mae = min(mae_previo, profit_apertura + spread_pips)
+
+            if not closed and activar_superv and velas_abiertas > INMUNIDAD_VELAS_EFECTIVA:
+                v_ef = max(velas_abiertas, 3.0); V_z = (_velocidad_snapshot(mfe_actual, mae_previo, profit_apertura, v_ef, spread_pips) - med_v) / (mad_v + 1e-9)
+                if velas_abiertas <= 2.0: Fid = 0.5
+                else: Fid = (math.tanh(V_z - Z_pred) + 1.0) / 2.0
+
+                D_ = 1.0 / (1.0 + (abs(mae_previo) / (mad_v * v_ef + 1e-9)))
+                Theta = 1.0 - min(velas_abiertas / lim_T_seguro, 1.0)
+                C_ = (math.tanh(mfe_actual / (mad_v * v_ef + 1e-9)) + 1.0) / 2.0
+                inter_TD = Theta * D_; inter_FD = Fid * D_
+
+                Z_pred_norm = math.tanh(Z_pred)
+                v_ef_norm = math.tanh(v_ef / lim_T_seguro)
+
+                bruto_s = profit_apertura + spread_pips
+                t_obs = calcular_t_score_trade_numba(max(mfe_actual, bruto_s), min(mae_previo, bruto_s), profit_apertura, t_gain, t_loss, spread_pips)
+                dT = min(max(t_obs - T_hat0, -1.0), 1.0)
+                T_pred = (W_S[0]*Fid + W_S[1]*D_ + W_S[2]*Theta + W_S[3]*C_ + W_S[4]*Z_pred_norm + W_S[5]*v_ef_norm + W_S[6]*inter_TD + W_S[7]*inter_FD + W_S[8]*dT + W_S[9]*(dT*Theta)) + B_S
+
+                if T_pred < K_abortar:
+                    closed = True; m_mae = min(mae_previo, profit_apertura + spread_pips)
+
+            if closed:
+                if cnt < max_trades:
+                    m_mfe = max(mfe_actual, profit_apertura + spread_pips)
+                    mfe_A[cnt] = m_mfe; mae_A[cnt] = m_mae; prof_A[cnt] = profit_apertura; ent_A[cnt] = idx_in; sal_A[cnt] = i + 1
+                    tscore_A[cnt] = calcular_t_score_trade_numba(m_mfe, m_mae, profit_apertura, t_gain, t_loss, spread_pips)
+                    cnt += 1
+                pos = 0
+
+        elif pos == 0:
+            if signos_in[i] < 0 and extremo_in[i] <= (sat_inf_in[i] * armado_in) and acum_in[i] >= (extremo_in[i] * (1.0 - chasquido_in)):
+                autorizado = True; v_req_tmp = 0.0; z_tmp = 0.0; t_raw = 0.0
+                if activar_ml:
+                    z_tmp = (W_R[0]*z_base_in[i] + W_R[1]*in_v[i] + W_R[2]*in_a[i] + W_R[3]*math.sin(math.atan2(in_v[i], z_base_in[i])) +
+                             W_R[4]*z_base_out[i] + W_R[5]*out_v[i] + W_R[6]*out_a[i] + W_R[7]*math.sin(math.atan2(out_v[i], z_base_out[i])) +
+                             W_R[8]*z_macro_1[i] + W_R[9]*z_macro_2[i]) + B_R
+                    if z_tmp < umbral_z_ia: autorizado = False
+                    else: v_req_tmp = ((z_tmp * mad_v) + med_v) * RATIO_CAPTURA_VELOCIDAD
+                    t_raw = _pred10(W_T, B_T, z_base_in[i], in_v[i], in_a[i], math.sin(math.atan2(in_v[i], z_base_in[i])), z_base_out[i], out_v[i], out_a[i], math.sin(math.atan2(out_v[i], z_base_out[i])), z_macro_1[i], z_macro_2[i])
+                    if t_raw < T_min: autorizado = False
+                if autorizado:
+                    pos = 1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
+                    v_req = v_req_tmp * escala_v[i]; Z_pred = z_tmp; T_hat0 = min(max(t_raw, 0.0), 1.0); t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False
+
+    if pos == 1 and trade_tuvo_iteracion and cnt < max_trades:
+        idx_final = n_velas - 1
+        profit_apertura = ((opens_arr[idx_final] - p_in) * pips_mult) - spread_pips
+        mae_previo = (min_v - p_in) * pips_mult; mfe_actual = (max_v - p_in) * pips_mult
+        m_mfe = max(mfe_actual, profit_apertura + spread_pips)
+        m_mae = min(mae_previo, profit_apertura + spread_pips)
+        mfe_A[cnt] = m_mfe; mae_A[cnt] = m_mae; prof_A[cnt] = profit_apertura; ent_A[cnt] = idx_in; sal_A[cnt] = idx_final
+        tscore_A[cnt] = calcular_t_score_trade_numba(m_mfe, m_mae, profit_apertura, t_gain, t_loss, spread_pips)
+        cnt += 1
+
+    return mfe_A[:cnt], mae_A[:cnt], prof_A[:cnt], tscore_A[:cnt], ent_A[:cnt], sal_A[:cnt]
+
+
+@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
+def simular_motor_short_superv_T_ix(
+    signos_in, extremo_in, sat_sup_in, acum_in, signos_out, extremo_out, sat_inf_out, acum_out,
+    z_base_in, in_v, in_a, z_base_out, out_v, out_a, z_macro_1, z_macro_2,
+    opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
+    armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
+    activar_ml, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
+    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v):
+
+    pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
+    t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False; T_hat0 = 0.0
+    mae_previo = 0.0; mfe_actual = 0.0; profit_apertura = 0.0
+
+    max_trades = (n_velas // 2) + 5
+    mfe_A = np.empty(max_trades, dtype=np.float32); mae_A = np.empty(max_trades, dtype=np.float32)
+    prof_A = np.empty(max_trades, dtype=np.float32); tscore_A = np.empty(max_trades, dtype=np.float32)
+    ent_A = np.empty(max_trades, dtype=np.int64); sal_A = np.empty(max_trades, dtype=np.int64)
+    cnt = 0
+    lim_T_seguro = (atrac_t * TOLERANCIA_VIDA_MEDIA) + 1e-9 if atrac_t > 0 else LIM_T_FALLBACK_VELAS
+
+    for i in range(1, n_velas - 1):
+        if pos == -1:
+            trade_tuvo_iteracion = True
+            if highs_arr[i] > max_v: max_v = highs_arr[i]
+            if lows_arr[i] < min_v: min_v = lows_arr[i]
+
+            if phantom_arr[i] == 0.0:
+                prof_vela = ((p_in - opens_arr[i]) * pips_mult) - spread_pips
+                if prof_vela > 0.0: t_gain += 1.0
+                else: t_loss += 1.0
+
+            velas_abiertas = max(float(i - idx_in + 1), 1.0)
+            mae_previo = (p_in - max_v) * pips_mult; mfe_actual = (p_in - min_v) * pips_mult
+            profit_apertura = ((p_in - opens_arr[i+1]) * pips_mult) - spread_pips
+            closed = False; m_mae = mae_previo
+
+            if activar_ml:
+                if atrac_t > 0 and velas_abiertas > lim_T_seguro:
+                    closed = True; m_mae = min(mae_previo, profit_apertura + spread_pips)
+                else:
+                    target_req = max((v_req * velas_abiertas * (1.0 + (abs(mae_previo) / 10.0))) + (abs(mae_previo) * 0.5), spread_pips + 1.0)
+                    if profit_apertura >= target_req: closed = True; m_mae = mae_previo
+            if not closed:
+                if signos_out[i] < 0 and extremo_out[i] <= (sat_inf_out[i] * armado_out) and acum_out[i] >= (extremo_out[i] * (1.0 - chasquido_out)):
+                    closed = True; m_mae = min(mae_previo, profit_apertura + spread_pips)
+
+            if not closed and activar_superv and velas_abiertas > INMUNIDAD_VELAS_EFECTIVA:
+                v_ef = max(velas_abiertas, 3.0); V_z = (_velocidad_snapshot(mfe_actual, mae_previo, profit_apertura, v_ef, spread_pips) - med_v) / (mad_v + 1e-9)
+                if velas_abiertas <= 2.0: Fid = 0.5
+                else: Fid = (math.tanh(V_z - Z_pred) + 1.0) / 2.0
+
+                D_ = 1.0 / (1.0 + (abs(mae_previo) / (mad_v * v_ef + 1e-9)))
+                Theta = 1.0 - min(velas_abiertas / lim_T_seguro, 1.0)
+                C_ = (math.tanh(mfe_actual / (mad_v * v_ef + 1e-9)) + 1.0) / 2.0
+                inter_TD = Theta * D_; inter_FD = Fid * D_
+
+                Z_pred_norm = math.tanh(Z_pred)
+                v_ef_norm = math.tanh(v_ef / lim_T_seguro)
+
+                bruto_s = profit_apertura + spread_pips
+                t_obs = calcular_t_score_trade_numba(max(mfe_actual, bruto_s), min(mae_previo, bruto_s), profit_apertura, t_gain, t_loss, spread_pips)
+                dT = min(max(t_obs - T_hat0, -1.0), 1.0)
+                T_pred = (W_S[0]*Fid + W_S[1]*D_ + W_S[2]*Theta + W_S[3]*C_ + W_S[4]*Z_pred_norm + W_S[5]*v_ef_norm + W_S[6]*inter_TD + W_S[7]*inter_FD + W_S[8]*dT + W_S[9]*(dT*Theta)) + B_S
+
+                if T_pred < K_abortar:
+                    closed = True; m_mae = min(mae_previo, profit_apertura + spread_pips)
+
+            if closed:
+                if cnt < max_trades:
+                    m_mfe = max(mfe_actual, profit_apertura + spread_pips)
+                    mfe_A[cnt] = m_mfe; mae_A[cnt] = m_mae; prof_A[cnt] = profit_apertura; ent_A[cnt] = idx_in; sal_A[cnt] = i + 1
+                    tscore_A[cnt] = calcular_t_score_trade_numba(m_mfe, m_mae, profit_apertura, t_gain, t_loss, spread_pips)
+                    cnt += 1
+                pos = 0
+
+        elif pos == 0:
+            if signos_in[i] > 0 and extremo_in[i] >= (sat_sup_in[i] * armado_in) and acum_in[i] <= (extremo_in[i] * (1.0 - chasquido_in)):
+                autorizado = True; v_req_tmp = 0.0; z_tmp = 0.0; t_raw = 0.0
+                if activar_ml:
+                    z_tmp = (W_R[0]*z_base_in[i] + W_R[1]*in_v[i] + W_R[2]*in_a[i] + W_R[3]*math.sin(math.atan2(in_v[i], z_base_in[i])) +
+                             W_R[4]*z_base_out[i] + W_R[5]*out_v[i] + W_R[6]*out_a[i] + W_R[7]*math.sin(math.atan2(out_v[i], z_base_out[i])) +
+                             W_R[8]*z_macro_1[i] + W_R[9]*z_macro_2[i]) + B_R
+                    if z_tmp < umbral_z_ia: autorizado = False
+                    else: v_req_tmp = ((z_tmp * mad_v) + med_v) * RATIO_CAPTURA_VELOCIDAD
+                    t_raw = _pred10(W_T, B_T, z_base_in[i], in_v[i], in_a[i], math.sin(math.atan2(in_v[i], z_base_in[i])), z_base_out[i], out_v[i], out_a[i], math.sin(math.atan2(out_v[i], z_base_out[i])), z_macro_1[i], z_macro_2[i])
+                    if t_raw < T_min: autorizado = False
+                if autorizado:
+                    pos = -1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
+                    Z_pred = z_tmp; v_req = v_req_tmp * escala_v[i]; T_hat0 = min(max(t_raw, 0.0), 1.0); t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False
+
+    if pos == -1 and trade_tuvo_iteracion and cnt < max_trades:
+        idx_final = n_velas - 1
+        profit_apertura = ((p_in - opens_arr[idx_final]) * pips_mult) - spread_pips
+        mae_previo = (p_in - max_v) * pips_mult; mfe_actual = (p_in - min_v) * pips_mult
+        m_mfe = max(mfe_actual, profit_apertura + spread_pips)
+        m_mae = min(mae_previo, profit_apertura + spread_pips)
+        mfe_A[cnt] = m_mfe; mae_A[cnt] = m_mae; prof_A[cnt] = profit_apertura; ent_A[cnt] = idx_in; sal_A[cnt] = idx_final
+        tscore_A[cnt] = calcular_t_score_trade_numba(m_mfe, m_mae, profit_apertura, t_gain, t_loss, spread_pips)
+        cnt += 1
+
+    return mfe_A[:cnt], mae_A[:cnt], prof_A[:cnt], tscore_A[:cnt], ent_A[:cnt], sal_A[:cnt]
+
+# ==========================================================
+# 🚀 4. ESCANEO DE K_ABORTAR — VÍA SIMULADOR REAL, IS-ONLY
+# ==========================================================
+
 def escanear_umbral_k(sim_is, W_S, B_S, candidatos_k, min_trades):
     mejor_score = 0.0; mejor_k = None; mejor_r = None
     for K in candidatos_k:
@@ -1219,6 +1448,8 @@ def _fila_reporte(simbolo, dir_nombre, idx, c, st):
         'Fold': int(r['Fold']),
         'Rank_Opt_Orig': r['Rank'], 'K_Abortar': round(c['K_opt'], 2),
         'SEL_SCORE_IS': round(c['ClaveRank'], 3),
+        'Metrica': LAB_METRICA, 'SF_IS': round(c['EX']['sf_is'], 3), 'V7_IS': round(c['EX']['v7_is'], 3),
+        'SF_OOS': round(c['EX']['sf_oos'], 3), 'V7_OOS': round(c['EX']['v7_oos'], 3),
         'SCORE_FLUJO_IA': round(c['ScoreFlujo'], 2),
         'T-SCORE_OOS': round(c['Med_T_OOS'], 2), 'T-SCORE_IS': round(c['Med_T_IS'], 2),
         'T-SCORE_IS_Base': round(c['Med_T_IS_Base'], 2),
@@ -1334,6 +1565,43 @@ def lab_bloque_tam(ml, tam):
         for nombre, v in (('tam_w', tam['coef']), ('tam_mu', tam['mu']), ('tam_sd', tam['sd'])):
             t += "\n      " + " ".join(f"{p}{nombre}[{k}]={v[k]:.{DEC_W}f};" for k in range(11))
     return t
+
+
+def lab_eval_v7(tup, dircode, O, H, L, pm, c, nt, sigma_sr, n_min, min_trades, seed):
+    """Evalúa un resultado de simulador `_ix` (mfe, mae, prof, tsc, ent, sal). Devuelve (r, ex): r = vector de eval_robustez_numba_v6 con
+    r[0] reemplazado por Score_v7; ex = {'sf': Score_final de los mismos trades, 'v7': Score_v7}."""
+    mfe, mae, prof, tsc, ent, sal = tup
+    r = np.array(eval_robustez_numba_v6(mfe, mae, prof, tsc, min_trades), dtype=np.float64)
+    sf = float(r[0]); n = len(prof); v7 = 0.0
+    if n >= 3:
+        try:
+            res = V7.score_v7(np.full(n, dircode, dtype=np.int64), ent, sal, prof.astype(np.float64), O, H, L, O, pm, c, nt=nt,
+                              sigma_sr=sigma_sr, opcion=LAB_V7_OPCION, rng=np.random.default_rng(seed), R=LAB_V7_R, n_min=n_min)
+            v7 = float(res['score_v7'])
+        except ValueError:
+            v7 = 0.0        # ventana más corta que la escala h (60 velas): sin puntaje
+    r[0] = v7
+    return r, {'sf': sf, 'v7': v7}
+
+
+def lab_escanear_k_v7(sim_ix, grid, dircode, O, H, L, pm, c, min_trades, seed):
+    """Escaneo de K con Score_v7. Pasada 1: simula cada K y mide el Sharpe del alfa -> sigma_sr; pasada 2: Score_v7 con nt = len(grid)."""
+    tups = [sim_ix(True, float(K)) for K in grid]
+    srs = []
+    for t in tups:
+        n = len(t[2])
+        if n >= 3:
+            sen = V7.fusionar(np.full(n, dircode, dtype=np.int64), t[4], t[5], t[2].astype(np.float64))
+            if len(sen['E']) >= 3:
+                a = V7.alfa(sen, O, pm, LAB_V7_OPCION); sd = a.std(ddof=1)
+                if sd > 0: srs.append(a.mean() / sd)
+    sigma = float(np.std(srs, ddof=1)) if len(srs) >= 2 else 0.0
+    mejor_score = 0.0; mejor_k = None; mejor_r = None; mejor_ex = {'sf': float('nan'), 'v7': float('nan')}
+    for K, t in zip(grid, tups):
+        r, ex = lab_eval_v7(t, dircode, O, H, L, pm, c, len(grid), sigma, min_trades, min_trades, seed + int(round(float(K) * 1e5)) % 1000003)
+        if r[0] > mejor_score:
+            mejor_score = r[0]; mejor_k = float(K); mejor_r = r; mejor_ex = ex
+    return mejor_k, mejor_r, mejor_ex
 
 
 def lab_target_cierre(modo, y_target, tsc_snap, prof_snap, tid_snap):
@@ -1534,15 +1802,28 @@ def procesar_simbolo(SIMBOLO):
                 except ValueError as e_lab:
                     return desc(str(e_lab))
 
-                def run_sim(a, b, phantom, activar_superv, W_S, B_S, K):
-                    return sim_superv_func(*S(a, b), phantom, PIPS_MULT, b - a, arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO,
+                def run_sim(a, b, phantom, activar_superv, W_S, B_S, K, _f=None):
+                    return (_f or sim_superv_func)(*S(a, b), phantom, PIPS_MULT, b - a, arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO,
                                            True, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
                                            activar_superv, W_S, B_S, K, W_T, B_T, T_min, ESC[a:b])
 
+                # [LAB-V7 V0.4] evaluador según NEXUS_LAB_METRICA (final = exactamente lo de main)
+                dir_code_lab = 1 if direccion_nombre == 'LONG' else -1
+                sim_ix_func = (simular_motor_long_superv_T_ix if dir_code_lab == 1 else simular_motor_short_superv_T_ix) if LAB_METRICA == 'v7' else None
+                seed_lab = zlib.crc32(f"{SIMBOLO}|{direccion_nombre}|{idx}|v7".encode())
+
+                def EVAL(a, b, phantom, activar_superv, W_S, B_S, K, min_tr):
+                    if LAB_METRICA == 'v7':
+                        tup = run_sim(a, b, phantom, activar_superv, W_S, B_S, K, sim_ix_func)
+                        return lab_eval_v7(tup, dir_code_lab, opens_arr[a:b], highs_arr[a:b], lows_arr[a:b], PIPS_MULT, SPREAD_ACTIVO,
+                                           1, 0.0, min_tr, min_tr, seed_lab)
+                    mfe, mae, prof, tsc = run_sim(a, b, phantom, activar_superv, W_S, B_S, K)
+                    r = eval_robustez_numba_v6(mfe, mae, prof, tsc, min_tr)
+                    return r, {'sf': float(r[0]), 'v7': float('nan')}
+
                 w0 = np.zeros(10, dtype=np.float64)
 
-                mfe_b_is, mae_b_is, prof_b_is, t_b_is = run_sim(start_train, end_train, phantom_train, False, w0, 0.0, 1.0)
-                r_is_base = eval_robustez_numba_v6(mfe_b_is, mae_b_is, prof_b_is, t_b_is, MIN_OPS_IS_LAB)
+                r_is_base, _ex_b_is = EVAL(start_train, end_train, phantom_train, False, w0, 0.0, 1.0, MIN_OPS_IS_LAB)
                 if r_is_base[0] <= 0 or int(r_is_base[10]) < MIN_OPS_IS_LAB: return desc("IS_base_no_robusto")
 
                 x_traj, y_target, prof_snap, mae_snap, mfe_snap, tsc_snap, tid_snap, vela_snap = ext_traj_func(
@@ -1563,15 +1844,19 @@ def procesar_simbolo(SIMBOLO):
                 del x_traj, y_target, prof_snap, mae_snap, mfe_snap, tsc_snap, tid_snap
 
                 sim_is = lambda act, ws, bs, k: run_sim(start_train, end_train, phantom_train, act, ws, bs, k)
-                K_opt, r_k_is = escanear_umbral_k(sim_is, W_S, B_S, GRID_K, MIN_OPS_IS_LAB)
+                if LAB_METRICA == 'v7':
+                    K_opt, r_k_is, _ex_is = lab_escanear_k_v7(lambda act, k: run_sim(start_train, end_train, phantom_train, act, W_S, B_S, k, sim_ix_func),
+                                                              GRID_K, dir_code_lab, opens_arr[start_train:end_train], highs_arr[start_train:end_train],
+                                                              lows_arr[start_train:end_train], PIPS_MULT, SPREAD_ACTIVO, MIN_OPS_IS_LAB, seed_lab)
+                else:
+                    K_opt, r_k_is = escanear_umbral_k(sim_is, W_S, B_S, GRID_K, MIN_OPS_IS_LAB)
+                    _ex_is = {'sf': float(r_k_is[0]) if K_opt is not None else float('nan'), 'v7': float('nan')}
                 if K_opt is None: return desc("Escaneo_K_sin_score_positivo")
                 score_k_is = float(r_k_is[0])
 
-                mfe_s_oos, mae_s_oos, prof_s_oos, t_s_oos = run_sim(start_test, end_test, phantom_test, True, W_S, B_S, K_opt)
-                r_s_oos = eval_robustez_numba_v6(mfe_s_oos, mae_s_oos, prof_s_oos, t_s_oos, MIN_OPS_OOS_EXPORT)
+                r_s_oos, _ex_s_oos = EVAL(start_test, end_test, phantom_test, True, W_S, B_S, K_opt, MIN_OPS_OOS_EXPORT)
 
-                mfe_b_oos, mae_b_oos, prof_b_oos, t_b_oos = run_sim(start_test, end_test, phantom_test, False, w0, 0.0, 1.0)
-                r_b_oos = eval_robustez_numba_v6(mfe_b_oos, mae_b_oos, prof_b_oos, t_b_oos, 3)
+                r_b_oos, _ex_b_oos = EVAL(start_test, end_test, phantom_test, False, w0, 0.0, 1.0, 3)
 
                 score_s_is = score_k_is
                 score_s_oos = float(r_s_oos[0])
@@ -1594,7 +1879,7 @@ def procesar_simbolo(SIMBOLO):
                         'ScoreFlujo': score_flujo, 'Retencion': retencion * 100, 'Retencion_Raw': retencion_raw * 100,
                         'ScoreIS': score_s_is, 'WR_IS': r_k_is[6], 'MaxDD_IS': r_k_is[8],
                         'Med_T_IS': r_k_is[12], 'Med_T_IS_Base': r_is_base[12], 'Med_T_OOS': r_s_oos[12],
-                        'Ops_Ridge': trades_base, 'Ops_Superv': trades_superv, 'Base_Rechazado': bool(r_b_oos[0] <= 0.0),
+                        'Ops_Ridge': trades_base, 'Ops_Superv': trades_superv, 'Base_Rechazado': bool(_ex_b_oos['sf'] <= 0.0), 'EX': {'sf_is': _ex_is['sf'], 'v7_is': _ex_is['v7'], 'sf_oos': _ex_s_oos['sf'], 'v7_oos': _ex_s_oos['v7']},
                         'WR_Ridge': r_b_oos[6], 'WR_Superv': r_s_oos[6], 'MaxDD_Ridge': r_b_oos[8], 'MaxDD_Superv': r_s_oos[8],
                         'PF_Ridge': r_b_oos[7], 'PF_Superv': r_s_oos[7],
                         'MedProfitPips_Ridge': r_b_oos[3], 'MedProfitPips_Superv': r_s_oos[3],

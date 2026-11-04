@@ -26,6 +26,13 @@
 #         reproduce IGUAL BIT A BIT la escala de lab_escala_v (modos A y B); un bloque sin tam_* da None.
 #     L11 tag y carpeta: con interruptores apagados Fase_4_5_lab_A/B igualan a main; con interruptores activos el tag coincide con el de
 #         Fase_4_lab.TAG_ARCHIVOS; tamaño + gemelo nulo se rechaza al iniciar.
+#   V0.4 (2026-11-04) — Métrica de selección (NEXUS_LAB_METRICA). Reglas fijadas antes de correr:
+#     L12 kernels `_ix`: las 4 primeras salidas iguales bit a bit a las de los kernels originales del lab (long y short, con y sin
+#         supervivencia); vela de entrada < vela de salida; el pip neto de cada trade = dirección*(Open[salida]-Open[entrada])*pm - spread.
+#     L13 `lab_eval_v7`: r[0] = Score_v7 (igual a llamar V7.score_v7 directo); ex['sf'] = Score_final de los mismos trades; r[1:] = los de
+#         eval_robustez_numba_v6. `lab_escanear_k_v7` (con evaluador simulado de puntajes conocidos): elige el K de mayor puntaje, devuelve
+#         None si ninguno es positivo, usa nt = len(grilla), es determinista.
+#     L11 (ampliada): el tag con NEXUS_LAB_METRICA=v7 lleva _MV7 y coincide entre Fase 4 lab y Fase 4.5 lab A/B.
 #   Uso: python lab_v7/lab_pruebas.py  -> escribe lab_v7/lab_pruebas_resultados.json
 # ==============================================================================
 import os, sys, json, subprocess
@@ -224,17 +231,75 @@ def main():
         return r.returncode, r.stdout.strip()
     l11 = {}
     for nombre, env in (('defecto', {}), ('cierre', {'NEXUS_LAB_CIERRE': 'dT_cont'}), ('tamano', {'NEXUS_LAB_TAMANO': 'B'}),
-                        ('nulo_cierre', {'NEXUS_LAB_CIERRE': 'G_pips', 'NEXUS_LAB_NULO': '1'})):
+                        ('nulo_cierre', {'NEXUS_LAB_CIERRE': 'G_pips', 'NEXUS_LAB_NULO': '1'}),
+                        ('metrica_v7', {'NEXUS_LAB_METRICA': 'v7'})):
         c4, t4 = val('Fase_4_lab', 'X.TAG_ARCHIVOS', env)
         cA, tA = val('Fase_4_5_lab_A', 'X.TAG_ARCHIVOS_FASE4', env)
         cA2, dA = val('Fase_4_5_lab_A', 'X.DIR_SALIDA', env)
         cB, dB = val('Fase_4_5_lab_B', 'X.DIR_SALIDA', env)
         l11[f'{nombre}_tag_igual_Fase4'] = bool(c4 == 0 and cA == 0 and t4 == tA)
         l11[f'{nombre}_carpetas_A_B_iguales'] = bool(cA2 == 0 and cB == 0 and dA == dB and dA == 'F45_V12_E3' + tA[len('PROD_V12_E3'):])
+    l11['metrica_v7_lleva_MV7'] = bool(val('Fase_4_lab', 'X.TAG_ARCHIVOS', {'NEXUS_LAB_METRICA': 'v7'})[1].endswith('_MV7'))
     l11['defecto_igual_main'] = bool(M45.TAG_ARCHIVOS_FASE4 == 'PROD_V12_E3' and M45.DIR_SALIDA == 'F45_V12_E3')
     cX, _ = val('Fase_4_5_lab_A', 'X.DIR_SALIDA', {'NEXUS_LAB_TAMANO': 'A', 'NEXUS_LAB_NULO': '1'})
     l11['tamano_mas_nulo_rechazado'] = bool(cX != 0)
     out['L11_tag_y_carpeta_45'] = {'detalle': l11, 'pasa': all(l11.values())}
+
+    # L12 kernels _ix
+    l12 = {}
+    rng12 = np.random.default_rng(31); n12 = 6000; WR12 = rng12.normal(0, 0.05, 10); WT12 = rng12.normal(0, 0.05, 10); WS12 = rng12.normal(0, 0.1, 10)
+    uno12 = np.ones(n12)
+    for lado, dcode in (('long', 1), ('short', -1)):
+        S12, ph12 = entradas(rng12, n12, lado)
+        k_o = L.simular_motor_long_superv_T if lado == 'long' else L.simular_motor_short_superv_T
+        k_x = L.simular_motor_long_superv_T_ix if lado == 'long' else L.simular_motor_short_superv_T_ix
+        for sup in (False, True):
+            sargs = (True, WR12, 0.0, 0.5, 0.1, 10.0, 0.0, sup, WS12, 0.0, 0.3, WT12, 0.0, -1.0)
+            a12 = k_o(*S12, ph12, PM, n12, *pars, *sargs, uno12); b12 = k_x(*S12, ph12, PM, n12, *pars, *sargs, uno12)
+            l12[f'{lado}_superv{int(sup)}_4_salidas_iguales'] = bool(len(a12[0]) > 10 and len(b12) == 6 and all(np.array_equal(x, y) for x, y in zip(a12, b12[:4])))
+            ent, sal = b12[4], b12[5]; op12 = S12[16]
+            esperado = dcode * (op12[sal] - op12[ent]) * PM - pars[4]
+            l12[f'{lado}_superv{int(sup)}_indices_y_pip_neto'] = bool(np.all(ent < sal) and np.all(np.diff(ent) > 0) and np.allclose(b12[2], esperado, atol=1e-3))
+    out['L12_kernels_ix'] = {'detalle': l12, 'pasa': all(l12.values())}
+
+    # L13 evaluador y escaneo de K
+    import v7_metricas as V7
+    l13 = {}
+    S13, ph13 = entradas(np.random.default_rng(41), 8000, 'long')
+    tup13 = L.simular_motor_long_superv_T_ix(*S13, ph13, PM, 8000, *pars, True, WR12, 0.0, 0.5, 0.1, 10.0, 0.0, False, WS12, 0.0, 0.3, WT12, 0.0, -1.0, np.ones(8000))
+    O13, H13, L13_ = S13[16], S13[17], S13[18]
+    r13, ex13 = L.lab_eval_v7(tup13, 1, O13, H13, L13_, PM, pars[4], 1, 0.0, 20, 20, 5)
+    direc = V7.score_v7(np.ones(len(tup13[2]), dtype=np.int64), tup13[4], tup13[5], tup13[2].astype(np.float64), O13, H13, L13_, O13, PM, pars[4],
+                        nt=1, sigma_sr=0.0, opcion=L.LAB_V7_OPCION, rng=np.random.default_rng(5), R=L.LAB_V7_R, n_min=20)['score_v7']
+    ref13 = np.asarray(L.eval_robustez_numba_v6(*tup13[:4], 20), dtype=np.float64)
+    l13['r0_es_score_v7'] = bool(r13[0] == ex13['v7'] == direc)
+    l13['sf_igual_Score_final'] = bool(ex13['sf'] == float(ref13[0]))
+    l13['resto_de_r_intacto'] = bool(np.array_equal(r13[1:], ref13[1:], equal_nan=True))
+    registro = {}
+    def fake_eval(tup, dircode, O, H, Lw, pm, c, nt, sigma_sr, n_min, min_trades, seed):
+        registro['nt'] = nt; registro['sigma'] = sigma_sr
+        sc = {0.1: 3.0, 0.2: 9.0, 0.3: 5.0}[round(float(tup[0][0]), 1)]       # el simulador falso codifica K en mfe[0]
+        return np.array([sc, 0.0]), {'sf': 1.0, 'v7': sc}
+    def sim_falso(act, k):
+        n = 30; e = np.arange(n) * 10; sal = e + 5
+        mfe = np.full(n, k, dtype=np.float32); pi = (np.arange(n) % 5 - 1.0).astype(np.float32)
+        return mfe, mfe, pi, mfe, e.astype(np.int64), sal.astype(np.int64)
+    orig = L.lab_eval_v7
+    try:
+        L.lab_eval_v7 = fake_eval
+        k_sel, r_sel, ex_sel = L.lab_escanear_k_v7(sim_falso, [0.1, 0.2, 0.3], 1, O13, H13, L13_, PM, 1.0, 20, 5)
+        k_sel2, _, _ = L.lab_escanear_k_v7(sim_falso, [0.1, 0.2, 0.3], 1, O13, H13, L13_, PM, 1.0, 20, 5)
+        def todos_cero(tup, dircode, O, H, Lw, pm, c, nt, sigma_sr, n_min, min_trades, seed):
+            return np.array([0.0, 0.0]), {'sf': 1.0, 'v7': 0.0}
+        L.lab_eval_v7 = todos_cero
+        k_nada, _, _ = L.lab_escanear_k_v7(sim_falso, [0.1, 0.2, 0.3], 1, O13, H13, L13_, PM, 1.0, 20, 5)
+    finally:
+        L.lab_eval_v7 = orig
+    l13['escaneo_elige_el_mayor'] = bool(k_sel == 0.2 and r_sel[0] == 9.0 and ex_sel['v7'] == 9.0)
+    l13['escaneo_usa_nt_grilla'] = bool(registro['nt'] == 3 and registro['sigma'] >= 0.0)
+    l13['escaneo_determinista'] = bool(k_sel == k_sel2)
+    l13['escaneo_sin_positivos_da_None'] = bool(k_nada is None)
+    out['L13_evaluador_v7'] = {'detalle': l13, 'pasa': all(l13.values())}
 
     out['todas_pasan'] = all(v['pasa'] for k, v in out.items() if isinstance(v, dict) and 'pasa' in v)
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:

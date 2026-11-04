@@ -107,8 +107,36 @@
    "tamano_carpetas_A_B_iguales": true,
    "nulo_cierre_tag_igual_Fase4": true,
    "nulo_cierre_carpetas_A_B_iguales": true,
+   "metrica_v7_tag_igual_Fase4": true,
+   "metrica_v7_carpetas_A_B_iguales": true,
+   "metrica_v7_lleva_MV7": true,
    "defecto_igual_main": true,
    "tamano_mas_nulo_rechazado": true
+  },
+  "pasa": true
+ },
+ "L12_kernels_ix": {
+  "detalle": {
+   "long_superv0_4_salidas_iguales": true,
+   "long_superv0_indices_y_pip_neto": true,
+   "long_superv1_4_salidas_iguales": true,
+   "long_superv1_indices_y_pip_neto": true,
+   "short_superv0_4_salidas_iguales": true,
+   "short_superv0_indices_y_pip_neto": true,
+   "short_superv1_4_salidas_iguales": true,
+   "short_superv1_indices_y_pip_neto": true
+  },
+  "pasa": true
+ },
+ "L13_evaluador_v7": {
+  "detalle": {
+   "r0_es_score_v7": true,
+   "sf_igual_Score_final": true,
+   "resto_de_r_intacto": true,
+   "escaneo_elige_el_mayor": true,
+   "escaneo_usa_nt_grilla": true,
+   "escaneo_determinista": true,
+   "escaneo_sin_positivos_da_None": true
   },
   "pasa": true
  },

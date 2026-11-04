@@ -90,11 +90,13 @@ assert ESCALON in ('E0', 'E1', 'E2', 'E3')
 LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' | 'B'
 LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
+LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' | 'v7' (solo cambia el tag: 4.5 no usa Score_v7)
+assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
 assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
 assert not (LAB_NULO and LAB_TAMANO != 'off'), "Gemelo nulo con Ridge de tamaño no es exportable: la escala desplazada no sale en el .txt"
-LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO
-_SUF_LAB = (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_NULO" if LAB_NULO else "")) if LAB_ACTIVO else ""
+LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final')
+_SUF_LAB = (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_NULO" if LAB_NULO else "")) if LAB_ACTIVO else ""
 TAG_ARCHIVOS_FASE4 = f"PROD_V12_{ESCALON}" + _SUF_LAB  # Sincronizado con Fase 4 V12.0 / Fase_4_lab.py
 DIR_ENTRADA = "."
 DIR_SALIDA = f"F45_V12_{ESCALON}" + _SUF_LAB
