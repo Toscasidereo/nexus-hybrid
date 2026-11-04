@@ -76,5 +76,41 @@
   },
   "pasa": true
  },
+ "L9_kernel_45_lab": {
+  "detalle": {
+   "long_superv0_igual_main": true,
+   "long_superv1_igual_main": true,
+   "long_escala_se_usa": true,
+   "short_superv0_igual_main": true,
+   "short_superv1_igual_main": true,
+   "short_escala_se_usa": true
+  },
+  "pasa": true
+ },
+ "L10_export_parse_escala": {
+  "detalle": {
+   "A_modo": true,
+   "A_escala_igual_bit_a_bit": true,
+   "B_modo": true,
+   "B_escala_igual_bit_a_bit": true,
+   "sin_tam_da_None": true
+  },
+  "pasa": true
+ },
+ "L11_tag_y_carpeta_45": {
+  "detalle": {
+   "defecto_tag_igual_Fase4": true,
+   "defecto_carpetas_A_B_iguales": true,
+   "cierre_tag_igual_Fase4": true,
+   "cierre_carpetas_A_B_iguales": true,
+   "tamano_tag_igual_Fase4": true,
+   "tamano_carpetas_A_B_iguales": true,
+   "nulo_cierre_tag_igual_Fase4": true,
+   "nulo_cierre_carpetas_A_B_iguales": true,
+   "defecto_igual_main": true,
+   "tamano_mas_nulo_rechazado": true
+  },
+  "pasa": true
+ },
  "todas_pasan": true
 }

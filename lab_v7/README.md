@@ -16,6 +16,9 @@ Fórmulas: `claude/metricas_score_v7_propuesta.md` (sección 6) del proyecto Aud
 | `Fase_4_lab.py` | Copia de `Fase_4_V12_0.py` con tres interruptores (Ridge de tamaño, Ridge de cierre, gemelo nulo). Apagados = igual que `main`. |
 | `lab_pruebas.py` | Controles L1-L8 de la copia (paridad bit a bit con `main`, sin fuga IS→OOS, targets, grilla de K, interruptores, **L8: el texto exportado del Ridge de tamaño, leído por una emulación escalar del EA, reproduce la escala del lab igual bit a bit**). `python lab_v7/lab_pruebas.py` (~40 s). |
 | `lab_pruebas_resultados.json` | Resultado de la última corrida. |
+| `lab_escala.py` | Kernels de la escala de `v_req` compartidos por Fase 4 del lab, Fase 4.5 A del lab y el EA gemelo (mismo orden de operaciones). |
+| `Fase_4_5_lab_A.py` / `Fase_4_5_lab_B.py` | Copias de Fase 4.5 A y B. Mismo tag por las mismas variables `NEXUS_LAB_*`; A lee `tam_*` del `.txt` y simula con la escala (`simular_motor` recibe `escala_v`). Apagadas = main. |
+| `correr_lab.sh` | Corre Fase 4 lab → 4.5 A → 4.5 B con los mismos interruptores. Fases 0, 1&2 y 3 no cambian. |
 | `EA_V12.01_LAB.txt` | **EA gemelo.** Copia de `EA_V12.01.txt` (el original no se toca; solo se agregaron líneas) con el Ridge de tamaño del lab (`tam_*`, `LabActividad`, `LabEscalaTamano`). Con `tam_modo = 0` se comporta como V12.01. |
 
 ## Entrada del módulo
@@ -73,9 +76,13 @@ Los archivos de salida llevan el sufijo `_LAB_<tamaño>_<cierre>[_NULO]`: no pis
 - El gemelo nulo cubre solo estas piezas. Ridge 1 y la Cabeza B no tienen gemelo.
 - Falta `G_acotado` (requiere la actividad de entrada por trade).
 
+## Cómo correr la cadena del lab
+Fases 0, 1&2 y 3 se corren una vez con los scripts de la raíz (sin cambios). Después, desde la carpeta de trabajo con sus salidas: `bash lab_v7/correr_lab.sh [off|A|B] [T_terminal|dT_cont|G_pips] [0|1]`. Las tres fases del lab leen las mismas variables `NEXUS_LAB_*`, así que el tag y las carpetas (`F45_V12_E3_LAB_...`) coinciden. `[PENDIENTE / NO VERIFICABLE]`: la cadena nunca se ejecutó de punta a punta con datos reales.
+
 ## Pendiente
 - Adaptador que lea la salida de Fase 3 (tabla de trades por caso) y llame a `score_v7` y `t_v2`. Se escribe cuando exista una muestra real de esa salida.
 - Prueba 2 y 3 de T_v2 (contra sustitutos y como target de Ridge). `T_v2` como target de cierre: agregar un modo a `lab_target_cierre` cuando se decida (H-V7-06 primero).
 - Primera corrida real de `Fase_4_lab.py` en la VM, con las tres corridas pareadas.
-- **Fase 4.5** (`Fase_4_5_V_12_0_A/B.py`): lee el tag fijo `PROD_V12_{ESCALON}` y no conoce `tam_*`; para verificar un cerebro del lab hace falta (a) tag por variable de entorno y (b) lectura de `tam_*` con la escala calculada igual que el EA. Requiere `LUZ VERDE: REFACTORIZACION FASE_4_5`.
+- ~~Fase 4.5~~ **hecho (2026-11-04):** `Fase_4_5_lab_A/B.py` leen el tag del lab y `tam_*`. Controles L9–L11 pasan en datos sintéticos; no corrieron con datos reales.
+- La escala de Fase 4.5 se calcula sobre todo el parquet (el EA la aplica siempre); la de Fase 4 solo existe en la ventana IS+OOS del fold. Coinciden en el OOS del fold, que es donde Fase 4.5 chequea paridad.
 - Compilar `EA_V12.01_LAB.txt` en MetaEditor y repetir M7 con un cerebro de modo A y otro de modo B.

@@ -3,6 +3,12 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V7 V0.3 (2026-11-04) — ALINEACIÓN DE LA CADENA (orden del CRO: "Alinea todas las fases de python, para que funcione el lab 7"):
+#      • Los kernels de la escala viven ahora en `lab_v7/lab_escala.py` (compartidos con `Fase_4_5_lab_A.py`); sin cambio de aritmética.
+#      • Los features sin(atan2(v, z)) de X10 se calculan con `lab_fase_nb` (misma tipificación float32 que el kernel de simulación y
+#        que el Z de Ridge 1) en vez de numpy.
+#      • Fase 4.5 A/B del lab: `lab_v7/Fase_4_5_lab_A.py` y `Fase_4_5_lab_B.py` (copias; leen el mismo tag por las mismas variables NEXUS_LAB_*).
+#
 # 📋 BITÁCORA LAB-V7 V0.2 (2026-11-04) — EA GEMELO DEL LAB (orden del CRO: "terminar de alinear el EA para que sea gemelo digital de Lab 7"):
 #    El export del Ridge de tamaño pasa a ser ejecutable por el EA gemelo `lab_v7/EA_V12.01_LAB.txt`. Esta entrada reemplaza en
 #    la práctica el aviso ⚠️ de V0.1 (que se conserva abajo como historia) para los modos de TAMAÑO con el EA gemelo.
@@ -245,6 +251,7 @@ from nexus_formulas_core import (
 )
 
 import nexus_tablero as TAB   # [TABLERO] fuente única de folds / IS-OOS / reserva ciega / MEMORIA_FIFO
+from lab_escala import lab_actividad_nb, lab_fase_nb, _lab_esc_A_nb, _lab_esc_B_nb   # [LAB-V7 V0.3] kernels compartidos con Fase_4_5_lab_A
 
 warnings.simplefilter('ignore')
 
@@ -1265,54 +1272,6 @@ def _leer_parquet_columnas(archivo, columnas):
 # ==========================================================
 # [LAB-V7] FUNCIONES DE LABORATORIO (módulo; probadas en lab_pruebas.py)
 # ==========================================================
-@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
-def lab_actividad_nb(opens, pm, ventana):
-    """act[i] = suma ascendente (j = i-ventana+1 .. i) de d[j]; d[j] = |open[j]-open[j-1]|*pm; d[0] = 0. NaN si i < ventana-1.
-    Mismo orden de operaciones que el EA gemelo (LabActividad)."""
-    n = len(opens); d = np.empty(n); d[0] = 0.0
-    for j in range(1, n):
-        d[j] = abs(opens[j] - opens[j - 1]) * pm
-    act = np.full(n, np.nan)
-    for i in range(ventana - 1, n):
-        t = 0.0
-        for j in range(i - ventana + 1, i + 1):
-            t += d[j]
-        act[i] = t
-    return act
-
-
-@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
-def _lab_esc_B_nb(act, act_med, a_is_med, emin, emax):
-    n = len(act); out = np.empty(n)
-    for r in range(n):
-        a = act[r] / act_med
-        if a != a:
-            a = a_is_med
-        e = a / a_is_med
-        if e < emin: e = emin
-        if e > emax: e = emax
-        out[r] = e
-    return out
-
-
-@njit(cache=True, fastmath=False, boundscheck=False, nogil=True)
-def _lab_esc_A_nb(X10, act, act_med, a_is_med, coef, inter, mu, sd, med_pred, emin, emax):
-    n = len(act); out = np.empty(n)
-    for r in range(n):
-        a = act[r] / act_med
-        if a != a:
-            a = a_is_med
-        t = 0.0
-        for k in range(11):
-            xk = X10[r, k] if k < 10 else a
-            t += coef[k] * ((xk - mu[k]) / sd[k])
-        e = (t + inter) / med_pred
-        if e < emin: e = emin
-        if e > emax: e = emax
-        out[r] = e
-    return out
-
-
 def lab_escala_v(modo, nulo, rng, N_velas, ini_tr, fin_tr, ini_te, fin_te, df_ml, act_arr, X10, params_out=None):
     """Arreglo float64 de largo N_velas con la escala de v_req por vela de decisión. 'off' => unos (idéntico a main).
     Solo usa datos IS para ajustar (mediana de actividad, Ridge MFE, normalización). Lanza ValueError(causa) si no es válida.
@@ -1566,9 +1525,9 @@ def procesar_simbolo(SIMBOLO):
                 rng_lab = np.random.default_rng(zlib.crc32(f"{SIMBOLO}|{direccion_nombre}|{idx}".encode()))
                 X10 = None
                 if LAB_TAMANO == 'A':
-                    X10 = np.column_stack([zbi, viv, via, np.sin(np.arctan2(viv.astype(np.float64), zbi.astype(np.float64))),
-                                           zbo, vov, voa, np.sin(np.arctan2(vov.astype(np.float64), zbo.astype(np.float64))),
-                                           zm1, zm2])[start_train:end_test].astype(np.float64)
+                    X10 = np.column_stack([zbi, viv, via, lab_fase_nb(viv, zbi),
+                                           zbo, vov, voa, lab_fase_nb(vov, zbo),
+                                           zm1, zm2])[start_train:end_test].astype(np.float64)   # [LAB-V7 V0.3] sin(atan2) con tipos float32 como el kernel
                 PAR_TAM = {}
                 try:
                     ESC = lab_escala_v(LAB_TAMANO, LAB_NULO, rng_lab, N_velas, start_train, end_train, start_test, end_test, df_ml, ACT_ARR, X10, PAR_TAM)

@@ -19,6 +19,13 @@
 #        (bucles escalares de Python, mismo orden de operaciones que el código MQL5 del EA gemelo) reproduce la escala de
 #        `lab_escala_v` IGUAL BIT A BIT en modos A y B, y la actividad `lab_actividad_nb` iguala la suma del EA (desplazamiento 59 → 0).
 #        Con modo 'off' el bloque es vacío (texto idéntico a main).
+#   V0.3 (2026-11-04) — Cadena alineada (Fase 4.5 del lab). Reglas fijadas antes de correr:
+#     L9  Fase_4_5_lab_A.simular_motor con escala = 1 iguala bit a bit a Fase_4_5_V_12_0_A.simular_motor (main), long y short, con y
+#         sin supervivencia; con escala != 1 el resultado cambia.
+#     L10 el texto exportado (lab_bloque_tam) leído por Fase_4_5_lab_A.parse_tam y reconstruido con lab_escala.escala_desde_parametros
+#         reproduce IGUAL BIT A BIT la escala de lab_escala_v (modos A y B); un bloque sin tam_* da None.
+#     L11 tag y carpeta: con interruptores apagados Fase_4_5_lab_A/B igualan a main; con interruptores activos el tag coincide con el de
+#         Fase_4_lab.TAG_ARCHIVOS; tamaño + gemelo nulo se rechaza al iniciar.
 #   Uso: python lab_v7/lab_pruebas.py  -> escribe lab_v7/lab_pruebas_resultados.json
 # ==============================================================================
 import os, sys, json, subprocess
@@ -30,6 +37,9 @@ RAIZ = os.path.abspath(os.path.join(AQUI, '..'))
 sys.path.insert(0, RAIZ); sys.path.insert(0, AQUI)
 import Fase_4_V12_0 as M
 import Fase_4_lab as L
+import Fase_4_5_V_12_0_A as M45
+import Fase_4_5_lab_A as L45
+from lab_escala import escala_desde_parametros
 
 PM = 10000.0
 
@@ -179,6 +189,52 @@ def main():
         t8[f'{modo}_rango'] = bool(e8[100:3500].min() >= 0.25 and e8[100:3500].max() <= 4.0)
     t8['off_bloque_vacio'] = bool(L.lab_bloque_tam('ml_toro', {}) == '' and L.lab_bloque_tam('ml_oso', {'modo': 'off'}) == '')
     out['L8_export_tamano_y_EA_gemelo'] = {'detalle': t8, 'pasa': all(t8.values())}
+
+    # L9 kernel de Fase 4.5 del lab vs main
+    l9 = {}
+    rng9 = np.random.default_rng(11); n9 = 6000; WR9 = rng9.normal(0, 0.05, 10); WT9 = rng9.normal(0, 0.05, 10); WS9 = rng9.normal(0, 0.1, 10)
+    for lado, dcode in (('long', 1), ('short', -1)):
+        S9, ph9 = entradas(rng9, n9, lado)
+        for sup in (False, True):
+            args = (dcode, 0, *S9, ph9, PM, n9, 0.5, 0.1, 0.5, 0.1, 1.2, WR9, 0.0, 0.5, 0.1, 10.0, 0.0, 0.60, 1.5,
+                    sup, WS9, 0.0, 0.3, 2, 10, True, WT9, 0.0, -1.0)
+            a9 = M45.simular_motor(*args); b9 = L45.simular_motor(*args, np.ones(n9))
+            l9[f'{lado}_superv{int(sup)}_igual_main'] = bool(len(a9[0]) > 10 and all(np.array_equal(x, y, equal_nan=True) for x, y in zip(a9, b9)))
+        c9 = L45.simular_motor(*args, np.full(n9, 3.0))
+        l9[f'{lado}_escala_se_usa'] = bool(len(c9[0]) != len(a9[0]) or not np.array_equal(c9[0], a9[0], equal_nan=True))
+    out['L9_kernel_45_lab'] = {'detalle': l9, 'pasa': all(l9.values())}
+
+    # L10 texto exportado -> parse_tam -> escala (bit a bit)
+    l10 = {}
+    for modo in ('A', 'B'):
+        par = {}
+        e10 = L.lab_escala_v(modo, False, np.random.default_rng(1), Nn, 100, 2000, 2000, 3500, df8, ACT, X8 if modo == 'A' else None, par)
+        tam = L45.parse_tam('X' + L.lab_bloque_tam('ml_toro', par), 'ml_toro')
+        rec = escala_desde_parametros(tam, X8 if modo == 'A' else None, ACT[100:3500])
+        l10[f'{modo}_modo'] = bool(tam['modo'] == modo)
+        l10[f'{modo}_escala_igual_bit_a_bit'] = bool(np.array_equal(rec, e10[100:3500]))
+    l10['sin_tam_da_None'] = bool(L45.parse_tam('g_pares[idx].ml_toro.umbral = 0.0;', 'ml_toro') is None)
+    out['L10_export_parse_escala'] = {'detalle': l10, 'pasa': all(l10.values())}
+
+    # L11 tag y carpeta de Fase 4.5 del lab
+    def val(modulo, expr, env):
+        e = {**os.environ, **env}
+        r = subprocess.run([sys.executable, '-c', f"import sys; sys.path[:0]=[{RAIZ!r},{AQUI!r}]; import {modulo} as X; print({expr})"],
+                           capture_output=True, text=True, env=e)
+        return r.returncode, r.stdout.strip()
+    l11 = {}
+    for nombre, env in (('defecto', {}), ('cierre', {'NEXUS_LAB_CIERRE': 'dT_cont'}), ('tamano', {'NEXUS_LAB_TAMANO': 'B'}),
+                        ('nulo_cierre', {'NEXUS_LAB_CIERRE': 'G_pips', 'NEXUS_LAB_NULO': '1'})):
+        c4, t4 = val('Fase_4_lab', 'X.TAG_ARCHIVOS', env)
+        cA, tA = val('Fase_4_5_lab_A', 'X.TAG_ARCHIVOS_FASE4', env)
+        cA2, dA = val('Fase_4_5_lab_A', 'X.DIR_SALIDA', env)
+        cB, dB = val('Fase_4_5_lab_B', 'X.DIR_SALIDA', env)
+        l11[f'{nombre}_tag_igual_Fase4'] = bool(c4 == 0 and cA == 0 and t4 == tA)
+        l11[f'{nombre}_carpetas_A_B_iguales'] = bool(cA2 == 0 and cB == 0 and dA == dB and dA == 'F45_V12_E3' + tA[len('PROD_V12_E3'):])
+    l11['defecto_igual_main'] = bool(M45.TAG_ARCHIVOS_FASE4 == 'PROD_V12_E3' and M45.DIR_SALIDA == 'F45_V12_E3')
+    cX, _ = val('Fase_4_5_lab_A', 'X.DIR_SALIDA', {'NEXUS_LAB_TAMANO': 'A', 'NEXUS_LAB_NULO': '1'})
+    l11['tamano_mas_nulo_rechazado'] = bool(cX != 0)
+    out['L11_tag_y_carpeta_45'] = {'detalle': l11, 'pasa': all(l11.values())}
 
     out['todas_pasan'] = all(v['pasa'] for k, v in out.items() if isinstance(v, dict) and 'pasa' in v)
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:
