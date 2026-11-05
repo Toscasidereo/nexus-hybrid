@@ -4,17 +4,19 @@
 # Carpeta: lab_v7/
 # ==============================================================================
 # BITÁCORA
+#   V0.3 (2026-11-05) — Quinto parámetro: FASE3 (main|v7). `v7` hace que Fase 4 lab lea el CSV de Fase_3_lab.py (sufijo _MV7; ver correr_f3_lab.sh).
 #   V0.2 (2026-11-04) — Cuarto parámetro: métrica de selección (final | v7). Mismo valor en las tres fases (el tag lleva _MV7).
 #   V0.1 (2026-11-04) — Creación. Orden del CRO: "Alinea todas las fases de python, para que funcione el lab 7".
 #     Las Fases 0, 1&2 y 3 NO cambian: se corren una sola vez, con los scripts de la raíz, y sus salidas las comparten main y el lab.
 #     Este script corre las tres fases que sí tienen copia de laboratorio, con los mismos interruptores en las tres (así el tag coincide).
 # Uso (desde la carpeta de trabajo que ya contiene las salidas de las Fases 0 a 3: parquets por símbolo y CSV de Fase 3):
-#     bash /ruta/al/repo/lab_v7/correr_lab.sh [TAMANO: off|A|B] [CIERRE: T_terminal|dT_cont|G_pips] [NULO: 0|1] [METRICA: final|v7]
+#     bash /ruta/al/repo/lab_v7/correr_lab.sh [TAMANO: off|A|B] [CIERRE: T_terminal|dT_cont|G_pips] [NULO: 0|1] [METRICA: final|v7] [FASE3: main|v7]
 # Ejemplos:
 #     bash .../correr_lab.sh                      # copia en defecto (= main), nombres iguales a main
 #     bash .../correr_lab.sh B dT_cont            # Ridge de tamaño B + cierre dT_cont
 #     bash .../correr_lab.sh off dT_cont 1        # gemelo nulo del cierre (tamaño + nulo no es exportable y se rechaza)
 #     bash .../correr_lab.sh off T_terminal 0 v7  # SOLO cambia la métrica de selección: Score_v7 en vez de Score_final
+#     bash .../correr_lab.sh off T_terminal 0 v7 v7  # cadena v7 completa: Fase 4 lee el CSV de Fase 3 lab v7 (correr antes correr_f3_lab.sh v7)
 # Corridas pareadas por configuración: (1) defecto, (2) modo a probar, (3) modo a probar con NULO=1 (solo cierre).
 # ==============================================================================
 set -euo pipefail
@@ -24,7 +26,8 @@ export NEXUS_LAB_TAMANO="${1:-off}"
 export NEXUS_LAB_CIERRE="${2:-T_terminal}"
 export NEXUS_LAB_NULO="${3:-0}"
 export NEXUS_LAB_METRICA="${4:-final}"
-echo "LAB-V7: tamaño=$NEXUS_LAB_TAMANO cierre=$NEXUS_LAB_CIERRE nulo=$NEXUS_LAB_NULO métrica=$NEXUS_LAB_METRICA | carpeta de trabajo: $(pwd)"
+export NEXUS_LAB_F3="${5:-main}"
+echo "LAB-V7: tamaño=$NEXUS_LAB_TAMANO cierre=$NEXUS_LAB_CIERRE nulo=$NEXUS_LAB_NULO métrica=$NEXUS_LAB_METRICA fase3=$NEXUS_LAB_F3 | carpeta de trabajo: $(pwd)"
 python "$RAIZ/lab_v7/Fase_4_lab.py"
 python "$RAIZ/lab_v7/Fase_4_5_lab_A.py"
 python "$RAIZ/lab_v7/Fase_4_5_lab_B.py"

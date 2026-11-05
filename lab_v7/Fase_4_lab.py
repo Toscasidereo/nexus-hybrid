@@ -303,7 +303,7 @@ MIN_OPS_OOS_EXPORT = 30
 
 CANDIDATOS_K_ABORTAR = np.array([0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50], dtype=np.float64)
 
-PATRON_CSV_FASE3 = "Reporte_Fase3_WFO_V5.8_{simbolo}.csv"
+PATRON_CSV_FASE3 = "Reporte_Fase3_WFO_V5.8_{simbolo}" + ("_MV7" if os.environ.get("NEXUS_LAB_F3", "main") == "v7" else "") + ".csv"   # LAB-V7 V0.5: NEXUS_LAB_F3=v7 lee la salida de Fase_3_lab.py
 
 RANKEAR_SOLO_IS = True
 PERMITIR_PHANTOM_AUSENTE = False
@@ -335,16 +335,18 @@ LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' |
 LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' = Score_final (main) | 'v7' = Score_v7 en la selección
+LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
+assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
 assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
 assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
-LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final')
+LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main')
 LAB_V7_OPCION = 'A'      # alfa neutral a la deriva local (opción A de la propuesta)   [DEFAULT / CRO-OVERRIDE]
 LAB_V7_R = 20            # réplicas del gemelo de captura (C3)                          [DEFAULT / CRO-OVERRIDE]
 ACT_VENTANA = 60
 ESCALA_MIN, ESCALA_MAX = 0.25, 4.0
 PERCENTILES_K_LAB = np.arange(0, 55, 5)
-TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
+TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
 COLS_REQ_FASE3 = ['Dir', 'Fold', 'Rank', '⚖️ BASE IN', '📊 ACUM IN', '⚙️ Arm_IN', '⚡ Chq_IN', '⚖️ BASE OUT', '📊 ACUM OUT', '⚙️ Arm_OUT', '⚡ Chq_OUT']
 MARCOS_VALIDOS = ('Fast', 'Mid', 'Slow')
 

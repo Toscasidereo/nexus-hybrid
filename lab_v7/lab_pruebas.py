@@ -33,6 +33,14 @@
 #         eval_robustez_numba_v6. `lab_escanear_k_v7` (con evaluador simulado de puntajes conocidos): elige el K de mayor puntaje, devuelve
 #         None si ninguno es positivo, usa nt = len(grilla), es determinista.
 #     L11 (ampliada): el tag con NEXUS_LAB_METRICA=v7 lleva _MV7 y coincide entre Fase 4 lab y Fase 4.5 lab A/B.
+#   V0.5 (2026-11-05) — Fase 3 lab. Reglas fijadas antes de correr:
+#     L14 v7_metricas V0.2: h precalculada = h calculada (idéntico bit a bit); R=0 da C3 = 0.5 y un puntaje finito igual a la
+#         combinación 50/20/15/15 con C3 = 0.5; 'sr_alfa' = media/desvío de alfa; v7_pruebas.py sigue pasando (se corre aparte).
+#     L15 Fase_3_lab: los kernels simular_motor_{long,short}_T_ix dan las 4 primeras salidas iguales bit a bit a las de los originales;
+#         vela de entrada < vela de salida (salvo el último trade si el cierre forzado cae en la misma vela, caso heredado del original); Score_v7 acepta la tabla; neto en pips = dirección*(Open[salida]-Open[entrada])*pm - spread.
+#         Los kernels se extraen del código fuente de Fase_3_lab.py (el archivo ejecuta todo al importarse) y se importan desde un módulo temporal.
+#     L16 Fase_3_lab con interruptores en defecto = Fase_3.py: las únicas líneas de Fase_3.py que no están intactas en Fase_3_lab.py
+#         son las de una lista cerrada (el resto del original aparece completo y en el mismo orden).
 #   Uso: python lab_v7/lab_pruebas.py  -> escribe lab_v7/lab_pruebas_resultados.json
 # ==============================================================================
 import os, sys, json, subprocess
@@ -232,13 +240,17 @@ def main():
     l11 = {}
     for nombre, env in (('defecto', {}), ('cierre', {'NEXUS_LAB_CIERRE': 'dT_cont'}), ('tamano', {'NEXUS_LAB_TAMANO': 'B'}),
                         ('nulo_cierre', {'NEXUS_LAB_CIERRE': 'G_pips', 'NEXUS_LAB_NULO': '1'}),
-                        ('metrica_v7', {'NEXUS_LAB_METRICA': 'v7'})):
+                        ('metrica_v7', {'NEXUS_LAB_METRICA': 'v7'}),
+                        ('f3_v7', {'NEXUS_LAB_F3': 'v7'}),
+                        ('cadena_v7', {'NEXUS_LAB_METRICA': 'v7', 'NEXUS_LAB_F3': 'v7'})):
         c4, t4 = val('Fase_4_lab', 'X.TAG_ARCHIVOS', env)
         cA, tA = val('Fase_4_5_lab_A', 'X.TAG_ARCHIVOS_FASE4', env)
         cA2, dA = val('Fase_4_5_lab_A', 'X.DIR_SALIDA', env)
         cB, dB = val('Fase_4_5_lab_B', 'X.DIR_SALIDA', env)
         l11[f'{nombre}_tag_igual_Fase4'] = bool(c4 == 0 and cA == 0 and t4 == tA)
         l11[f'{nombre}_carpetas_A_B_iguales'] = bool(cA2 == 0 and cB == 0 and dA == dB and dA == 'F45_V12_E3' + tA[len('PROD_V12_E3'):])
+    l11['f3_v7_lleva_F3V7'] = bool(val('Fase_4_lab', 'X.TAG_ARCHIVOS', {'NEXUS_LAB_F3': 'v7'})[1].endswith('_F3V7'))
+    l11['patron_csv_f3_v7'] = bool(val('Fase_4_lab', 'X.PATRON_CSV_FASE3', {'NEXUS_LAB_F3': 'v7'})[1] == 'Reporte_Fase3_WFO_V5.8_{simbolo}_MV7.csv' and val('Fase_4_lab', 'X.PATRON_CSV_FASE3', {})[1] == 'Reporte_Fase3_WFO_V5.8_{simbolo}.csv')
     l11['metrica_v7_lleva_MV7'] = bool(val('Fase_4_lab', 'X.TAG_ARCHIVOS', {'NEXUS_LAB_METRICA': 'v7'})[1].endswith('_MV7'))
     l11['defecto_igual_main'] = bool(M45.TAG_ARCHIVOS_FASE4 == 'PROD_V12_E3' and M45.DIR_SALIDA == 'F45_V12_E3')
     cX, _ = val('Fase_4_5_lab_A', 'X.DIR_SALIDA', {'NEXUS_LAB_TAMANO': 'A', 'NEXUS_LAB_NULO': '1'})
@@ -300,6 +312,72 @@ def main():
     l13['escaneo_determinista'] = bool(k_sel == k_sel2)
     l13['escaneo_sin_positivos_da_None'] = bool(k_nada is None)
     out['L13_evaluador_v7'] = {'detalle': l13, 'pasa': all(l13.values())}
+
+    # L14 v7_metricas V0.2
+    import v7_metricas as V7
+    l14 = {}
+    S14, ph14 = entradas(np.random.default_rng(51), 9000, 'long')
+    tup14 = L.simular_motor_long_superv_T_ix(*S14, ph14, PM, 9000, *pars, True, WR12, 0.0, 0.5, 0.1, 10.0, 0.0, False, WS12, 0.0, 0.3, WT12, 0.0, -1.0, np.ones(9000))
+    O14, H14, L14_ = S14[16], S14[17], S14[18]
+    d14 = np.ones(len(tup14[2]), dtype=np.int64); pi14 = tup14[2].astype(np.float64)
+    kw = dict(nt=1, sigma_sr=0.0, opcion='A', n_min=20)
+    a_none = V7.score_v7(d14, tup14[4], tup14[5], pi14, O14, H14, L14_, O14, PM, pars[4], rng=np.random.default_rng(3), R=20, **kw)
+    a_h = V7.score_v7(d14, tup14[4], tup14[5], pi14, O14, H14, L14_, O14, PM, pars[4], rng=np.random.default_rng(3), R=20, h=V7.escala_h(O14, PM), **kw)
+    l14['h_precalculada_identica'] = bool(a_none['score_v7'] == a_h['score_v7'] and a_none['C4'] == a_h['C4'] and a_none['h'] == a_h['h'])
+    r0 = V7.score_v7(d14, tup14[4], tup14[5], pi14, O14, H14, L14_, O14, PM, pars[4], rng=np.random.default_rng(3), R=0, **kw)
+    esperado = 100.0 * (V7.PESOS[0] * r0['C1'] + V7.PESOS[1] * r0['C2'] + V7.PESOS[2] * 0.5 + V7.PESOS[3] * r0['C4']) if r0.get('compuerta') else 0.0
+    l14['R0_C3_neutro_y_finito'] = bool(r0.get('C3') == 0.5 and np.isfinite(r0['score_v7']) and abs(r0['score_v7'] - esperado) < 1e-9)
+    sen14 = V7.fusionar(d14, tup14[4], tup14[5], pi14); al14 = V7.alfa(sen14, O14, PM, 'A')
+    l14['sr_alfa_media_sobre_desvio'] = bool(abs(a_none['sr_alfa'] - al14.mean() / al14.std(ddof=1)) < 1e-12)
+    l14['R20_C3_distinto_de_neutro_o_igual_semilla'] = bool(a_none['C3'] == V7.score_v7(d14, tup14[4], tup14[5], pi14, O14, H14, L14_, O14, PM, pars[4], rng=np.random.default_rng(3), R=20, **kw)['C3'])
+    out['L14_v7_metricas_V02'] = {'detalle': l14, 'pasa': all(l14.values())}
+
+    # L15 kernels _ix de Fase_3_lab (extraídos del código fuente) frente a los originales
+    import ast, importlib.util, tempfile
+    txt3 = open(os.path.join(RAIZ, 'lab_v7', 'Fase_3_lab.py'), encoding='utf-8').read(); arb = ast.parse(txt3)
+    nombres = ('simular_motor_long_T', 'simular_motor_short_T', 'simular_motor_long_T_ix', 'simular_motor_short_T_ix')
+    trozos = [ast.get_source_segment(txt3, nd) for nd in arb.body if isinstance(nd, ast.FunctionDef) and nd.name in nombres]
+    # get_source_segment no incluye decoradores: se reconstruyen con el decorador textual
+    trozos = []
+    for nd in arb.body:
+        if isinstance(nd, ast.FunctionDef) and nd.name in nombres:
+            ini = nd.decorator_list[0].lineno - 1; trozos.append("\n".join(txt3.split("\n")[ini:nd.end_lineno]))
+    mod3 = "import numpy as np\nfrom numba import njit\nfrom nexus_formulas_core import calcular_t_score_trade_numba\n\n" + "\n\n".join(trozos) + "\n"
+    dtmp = tempfile.mkdtemp(prefix='f3k_'); fk = os.path.join(dtmp, 'f3_kernels_tmp.py'); open(fk, 'w', encoding='utf-8').write(mod3)
+    spec = importlib.util.spec_from_file_location('f3_kernels_tmp', fk); K3 = importlib.util.module_from_spec(spec); spec.loader.exec_module(K3)
+    l15 = {'cuatro_kernels_extraidos': len(trozos) == 4}
+    rng15 = np.random.default_rng(61); n15 = 20000
+    op = (1.1 + np.cumsum(rng15.normal(0, 1e-4, n15))).astype(np.float32); hi = op + np.float32(5e-5); lo = op - np.float32(5e-5)
+    ph = (rng15.random(n15) < 0.02).astype(np.float32); sin = rng15.choice([-1.0, 1.0], n15).astype(np.float32); sout = rng15.choice([-1.0, 1.0], n15).astype(np.float32)
+    ein = rng15.uniform(-3, 3, n15).astype(np.float32); eout = rng15.uniform(-3, 3, n15).astype(np.float32)
+    ain = rng15.uniform(-3, 3, n15).astype(np.float32); aout = rng15.uniform(-3, 3, n15).astype(np.float32)
+    sup = np.full(n15, 1.0, np.float32); inf = np.full(n15, -1.0, np.float32); spr = np.float32(1.2); pmf = np.float32(PM)
+    for lado, dc in (('long', 1), ('short', -1)):
+        ko = getattr(K3, f'simular_motor_{lado}_T'); kx = getattr(K3, f'simular_motor_{lado}_T_ix')
+        args = (sin, ein, (inf if lado == 'long' else sup), ain, sout, eout, (sup if lado == 'long' else inf), aout, op, hi, lo, ph, pmf, n15, 0.5, 0.1, 0.5, 0.1, spr)
+        a = ko(*args); b = kx(*args)
+        l15[f'{lado}_trades_suficientes'] = bool(len(a[0]) > 50)
+        l15[f'{lado}_4_salidas_iguales_bit_a_bit'] = bool(len(b) == 6 and all(np.array_equal(x, y, equal_nan=True) for x, y in zip(a, b[:4])))
+        ent, sal = b[4], b[5]
+        # Caso límite heredado del original: señal en la penúltima vela -> entrada en n-1 y cierre forzado en n-1 (duración 0). Solo puede ser el último trade.
+        l15[f'{lado}_ent_menor_sal'] = bool(np.all(ent[:-1] < sal[:-1]) and ent[-1] <= sal[-1] and sal[-1] <= n15 - 1)
+        _r = V7.score_v7(np.full(len(ent), dc, dtype=np.int64), ent, sal, b[2].astype(np.float64), op.astype(np.float64), hi.astype(np.float64), lo.astype(np.float64), op.astype(np.float64), PM, float(spr), n_min=20, R=2)
+        l15[f'{lado}_v7_acepta_la_tabla'] = bool(np.isfinite(_r['score_v7']))
+        l15[f'{lado}_pip_neto'] = bool(np.allclose(b[2], dc * (op[sal].astype(np.float64) - op[ent].astype(np.float64)) * PM - float(spr), atol=2e-2))
+    out['L15_kernels_ix_Fase3'] = {'detalle': l15, 'pasa': all(l15.values())}
+
+    # L16 Fase_3_lab en defecto = Fase_3.py
+    import difflib
+    a3 = open(os.path.join(RAIZ, 'Fase_3.py'), encoding='utf-8').read().split("\n"); b3 = txt3.split("\n")
+    permitidas = {
+        "for t in completed_trials_L:", "for t in completed_trials_S:", "for fold in range(N_FOLDS):",
+        'nombre_archivo = f"Reporte_Fase3_WFO_V5.8_{SIMBOLO_A_EVALUAR}.csv"',
+        "df_reporte.to_csv(nombre_temp, index=False, encoding='utf-8-sig')",
+        "os.replace(nombre_temp, nombre_archivo) # Transacción O(1) a nivel de sistema de archivos"}
+    quitadas = [l[1:].strip() for l in difflib.unified_diff(a3, b3, lineterm='', n=0) if l.startswith('-') and not l.startswith('---')]
+    no_perm = [l for l in quitadas if l not in permitidas]
+    l16 = {'solo_lineas_permitidas_modificadas': not no_perm, 'cantidad_modificadas': len(quitadas), 'no_permitidas': no_perm[:5]}
+    out['L16_Fase3_lab_defecto_igual_main'] = {'detalle': l16, 'pasa': bool(l16['solo_lineas_permitidas_modificadas'] and len(quitadas) <= len(permitidas))}
 
     out['todas_pasan'] = all(v['pasa'] for k, v in out.items() if isinstance(v, dict) and 'pasa' in v)
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:

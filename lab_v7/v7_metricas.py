@@ -3,6 +3,13 @@
 # Carpeta: lab_v7/
 # ==============================================================================
 # BITÁCORA
+#   V0.2 (2026-11-05) — Soporte para Fase 3 lab (orden del CRO: "fase 3 con las métricas refinadas de lab 7"). Solo ADICIONES; con los
+#     argumentos de antes el resultado es idéntico bit a bit (control L14).
+#     (a) score_v7(..., h=None): escala h precalculada. Calcularla recorre toda la serie (~9,5 ms con 725 mil velas); en Fase 3 se calcula
+#         una vez por ventana, no una vez por trial.
+#     (b) score_v7(..., R=0): componente C3 = 0.5 (neutro: ni a favor ni en contra del gemelo nulo). Antes R=0 devolvía NaN.
+#         Con R=0 no se calcula el nulo; sirve como objetivo barato de Optuna. El valor completo (R=20) se calcula solo sobre el top.
+#     (c) El diccionario de salida agrega 'sr_alfa' (Sharpe de alfa, media/desvío): insumo de sigma_sr para el DSR deflactado por N_t.
 #   V0.1 (2026-11-01) — Creación. Orden del CRO (2026-11-01): "generá un nuevo laboratorio paralelo en una rama nueva".
 #     Implementa el formulario algebraico de claude/metricas_score_v7_propuesta.md, sección 6 (6.1 a 6.8), sin cambios
 #     de fórmula. Módulo autónomo: no importa ni modifica nexus_formulas_core.py ni las Fases (laboratorio intocable).
@@ -147,7 +154,7 @@ def c4_cola(a, mae, h):
 
 # ------------------------------------------------------------------ 6.7 Score_v7
 def score_v7(d, e, s, pi, O, H, L, C, pm, c, nt=1, sigma_sr=0.0, opcion='A', bars_dia=1440, rng=None, R=R_NULO,
-             pesos=PESOS, n_min=N_MIN):
+             pesos=PESOS, n_min=N_MIN, h=None):
     """Devuelve dict con N, C1..C4, Score_v7 y el DSR sin neutralizar (informativo, 'c1_crudo')."""
     rng = rng or np.random.default_rng(0)
     O, H, L, C = (np.ascontiguousarray(x, dtype=np.float64) for x in (O, H, L, C))
@@ -157,7 +164,7 @@ def score_v7(d, e, s, pi, O, H, L, C, pm, c, nt=1, sigma_sr=0.0, opcion='A', bar
         return {'N': N, 'score_v7': 0.0}
     a = alfa(sen, O, pm, opcion)
     mfe, mae = camino(sen['E'], sen['S'], sen['d'], O, H, L, pm)
-    h = escala_h(C, pm)
+    h = escala_h(C, pm) if h is None else float(h)
     u0 = sr0(sigma_sr, nt)
     c1 = dsr(a, u0)
     c2 = c2_estabilidad(a, sen['E'], len(O))
@@ -173,11 +180,12 @@ def score_v7(d, e, s, pi, O, H, L, C, pm, c, nt=1, sigma_sr=0.0, opcion='A', bar
         beta2 = sen['d'] * (O[S2] - O[E2]) * pm
         mfe2, _m = camino(E2.astype(np.int64), S2.astype(np.int64), sen['d'], O, H, L, pm)
         nul.append(np.median(_kappa(beta2, mfe2)))
-    c3 = float(np.clip(0.5 + (np.median(kap) - np.median(nul)), 0.0, 1.0))
+    c3 = float(np.clip(0.5 + (np.median(kap) - np.median(nul)), 0.0, 1.0)) if R > 0 else 0.5
     c4, cvar, mae90 = c4_cola(a, mae, h)
     ok_gate = (N >= n_min) and (a.mean() > 0)
     sc = 100.0 * (pesos[0] * c1 + pesos[1] * c2 + pesos[2] * c3 + pesos[3] * c4) if ok_gate else 0.0
-    return {'N': N, 'alfa_medio': float(a.mean()), 'C1': c1, 'C2': c2, 'C3': c3, 'C4': c4, 'cvar5': cvar, 'mae90': mae90,
+    _sd = float(a.std(ddof=1))
+    return {'N': N, 'alfa_medio': float(a.mean()), 'sr_alfa': (float(a.mean()) / _sd if _sd > 0 else 0.0), 'C1': c1, 'C2': c2, 'C3': c3, 'C4': c4, 'cvar5': cvar, 'mae90': mae90,
             'h': h, 'SR0': u0, 'c1_crudo': dsr(sen['pi'], u0), 'compuerta': bool(ok_gate), 'score_v7': float(sc)}
 
 

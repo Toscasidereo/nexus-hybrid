@@ -140,5 +140,36 @@
   },
   "pasa": true
  },
- "todas_pasan": true
+ "L14_v7_metricas_V02": {
+  "detalle": {
+   "h_precalculada_identica": true,
+   "R0_C3_neutro_y_finito": true,
+   "sr_alfa_media_sobre_desvio": true,
+   "R20_C3_distinto_de_neutro_o_igual_semilla": true
+  },
+  "pasa": true
+ },
+ "L15_kernels_ix_Fase3": {
+  "detalle": {
+   "cuatro_kernels_extraidos": true,
+   "long_trades_suficientes": true,
+   "long_4_salidas_iguales_bit_a_bit": true,
+   "long_ent_menor_sal": true,
+   "long_pip_neto": true,
+   "short_trades_suficientes": true,
+   "short_4_salidas_iguales_bit_a_bit": true,
+   "short_ent_menor_sal": false,
+   "short_pip_neto": true
+  },
+  "pasa": false
+ },
+ "L16_Fase3_lab_defecto_igual_main": {
+  "detalle": {
+   "solo_lineas_permitidas_modificadas": true,
+   "cantidad_modificadas": 6,
+   "no_permitidas": []
+  },
+  "pasa": true
+ },
+ "todas_pasan": false
 }
