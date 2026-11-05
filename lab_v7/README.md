@@ -14,11 +14,13 @@ Fórmulas: `claude/metricas_score_v7_propuesta.md` (sección 6) del proyecto Aud
 | `v7_pruebas.py` | Controles sintéticos P1-P7. `python lab_v7/v7_pruebas.py` (~10 s). |
 | `v7_pruebas_resultados.json` | Resultado de la última corrida de los controles. |
 | `Fase_4_lab.py` | Copia de `Fase_4_V12_0.py` con tres interruptores (Ridge de tamaño, Ridge de cierre, gemelo nulo). Apagados = igual que `main`. |
-| `lab_pruebas.py` | Controles L1-L8 de la copia (paridad bit a bit con `main`, sin fuga IS→OOS, targets, grilla de K, interruptores, **L8: el texto exportado del Ridge de tamaño, leído por una emulación escalar del EA, reproduce la escala del lab igual bit a bit**). `python lab_v7/lab_pruebas.py` (~40 s). |
+| `lab_pruebas.py` | Controles L1-L16 de las copias (paridad bit a bit con `main`, sin fuga IS→OOS, targets, grilla de K, interruptores, **L8: el texto exportado del Ridge de tamaño, leído por una emulación escalar del EA, reproduce la escala del lab igual bit a bit**). `python lab_v7/lab_pruebas.py` (~40 s). |
 | `lab_pruebas_resultados.json` | Resultado de la última corrida. |
 | `lab_escala.py` | Kernels de la escala de `v_req` compartidos por Fase 4 del lab, Fase 4.5 A del lab y el EA gemelo (mismo orden de operaciones). |
 | `Fase_4_5_lab_A.py` / `Fase_4_5_lab_B.py` | Copias de Fase 4.5 A y B. Mismo tag por las mismas variables `NEXUS_LAB_*`; A lee `tam_*` del `.txt` y simula con la escala (`simular_motor` recibe `escala_v`). Apagadas = main. |
-| `correr_lab.sh` | Corre Fase 4 lab → 4.5 A → 4.5 B con los mismos interruptores. Fases 0, 1&2 y 3 no cambian. |
+| `Fase_3_lab.py` | Copia de `Fase_3.py` con `NEXUS_LAB_METRICA` (híbrido Score_v7) y modo de medición opcional. Ver sección propia. |
+| `correr_f3_lab.sh` | Corre solo Fase 3 lab (la fase pesada, aparte). |
+| `correr_lab.sh` | Corre Fase 4 lab → 4.5 A → 4.5 B con los mismos interruptores; 5.º parámetro elige el CSV de Fase 3. Fases 0 y 1&2 no cambian. |
 | `EA_V12.01_LAB.txt` | **EA gemelo.** Copia de `EA_V12.01.txt` (el original no se toca; solo se agregaron líneas) con el Ridge de tamaño del lab (`tam_*`, `LabActividad`, `LabEscalaTamano`). Con `tam_modo = 0` se comporta como V12.01. |
 
 ## Entrada del módulo
@@ -77,13 +79,29 @@ Los archivos de salida llevan el sufijo `_LAB_<tamaño>_<cierre>[_NULO]`: no pis
 - El gemelo nulo cubre solo estas piezas. Ridge 1 y la Cabeza B no tienen gemelo.
 - Falta `G_acotado` (requiere la actividad de entrada por trade).
 
+## Fase_3_lab.py: Score_v7 en la búsqueda (2026-11-05)
+Copia de `Fase_3.py` V5.11 con dos interruptores. Sin ninguno, es `Fase_3.py` (control L16: solo cambian 6 líneas de una lista cerrada).
+| Variable | Valores | Efecto |
+|---|---|---|
+| `NEXUS_LAB_METRICA` | `final` (defecto), `v7` | `v7` = **híbrido**. (1) Optuna maximiza `Score_v7` con R=0: C1 (DSR), C2 (estabilidad) y C4 (cola); C3 (captura frente al gemelo nulo) queda neutro en 0.5. La escala `h` y los arreglos float64 se calculan una vez por ventana. (2) El top se reevalúa con `Score_v7` completo (nulo R=20) en IS y OOS. (3) El DSR de IS se deflacta con el **N_t real** (trials completos del estudio) y `sigma_sr` (desvío del Sharpe de alfa entre esos trials). (4) El rango final se ordena por `Score_v7` completo en IS, nunca por OOS. |
+| `NEXUS_LAB_F3_MEDIR` | `0` (defecto), `N` | Modo de medición: un símbolo, un fold, N trials, sin escribir CSV; imprime ms por trial de cada métrica. Opcional: no hace falta correrlo. |
+El CSV de `v7` se llama `Reporte_Fase3_WFO_V5.8_{SIMBOLO}_MV7.csv` (no pisa el de main) y trae las columnas extra `Metrica_F3, SF_IS, V7_IS, SF_OOS, V7_OOS, N_t, Sigma_SR`. Fase 4 lab lo lee con `NEXUS_LAB_F3=v7`.
+**El nulo de `Score_v7` (C3) no es una corrida aparte:** son 20 réplicas dentro del cálculo, sobre la muestra evaluada (IS o OOS). Costo medido con datos sintéticos de 725 mil velas: `Score_final` 0,02-0,3 ms; `Score_v7` completo 25-35 ms, de los cuales ~9,5 ms eran `escala_h` (ahora en caché). El costo real sobre datos reales `[PENDIENTE / NO VERIFICABLE]`.
+Límites: `v7` reordena y deflacta el top que Optuna encuentra con `Score_v7(R=0)`; el nulo no guía la búsqueda. N_t = trials completos (sobreestima los independientes: deflación conservadora). Close≈Open. Nada corrió con datos reales.
+
 ## Cómo correr la cadena del lab
-Fases 0, 1&2 y 3 se corren una vez con los scripts de la raíz (sin cambios). Después, desde la carpeta de trabajo con sus salidas: `bash lab_v7/correr_lab.sh [off|A|B] [T_terminal|dT_cont|G_pips] [0|1]`. Las tres fases del lab leen las mismas variables `NEXUS_LAB_*`, así que el tag y las carpetas (`F45_V12_E3_LAB_...`) coinciden. `[PENDIENTE / NO VERIFICABLE]`: la cadena nunca se ejecutó de punta a punta con datos reales.
+Fases 0 y 1&2 se corren una vez con los scripts de la raíz. Fase 3 se corre con el script de la raíz (main) o con `lab_v7/correr_f3_lab.sh [final|v7]` (lab). Después, desde la carpeta de trabajo: `bash lab_v7/correr_lab.sh [off|A|B] [T_terminal|dT_cont|G_pips] [0|1] [final|v7] [main|v7]`. El 5.º parámetro elige qué CSV de Fase 3 lee Fase 4 (`main` o `v7`). Las tres fases de abajo leen las mismas variables `NEXUS_LAB_*`, así que el tag (`_MV7`, `_F3V7`) y las carpetas coinciden.
+Cadenas pareadas para comparar (cada una es una corrida aparte):
+1. **main:** Fase 3 de la raíz + `correr_lab.sh` en defecto.
+2. **Solo Fase 4 v7:** Fase 3 de la raíz + `correr_lab.sh off T_terminal 0 v7 main`.
+3. **Solo Fase 3 v7:** `correr_f3_lab.sh v7` + `correr_lab.sh off T_terminal 0 final v7`.
+4. **Cadena v7 completa:** `correr_f3_lab.sh v7` + `correr_lab.sh off T_terminal 0 v7 v7`.
+La mejora cuenta si la cadena 4 supera a la 1 en el OOS y en la ventana ciega de Fase 4.5. `[PENDIENTE / NO VERIFICABLE]`: la cadena nunca se ejecutó de punta a punta con datos reales.
 
 ## Pendiente
 - Adaptador que lea la salida de Fase 3 (tabla de trades por caso) y llame a `score_v7` y `t_v2`. Se escribe cuando exista una muestra real de esa salida.
 - Prueba 2 y 3 de T_v2 (contra sustitutos y como target de Ridge). `T_v2` como target de cierre: agregar un modo a `lab_target_cierre` cuando se decida (H-V7-06 primero).
-- Primera corrida real de `Fase_4_lab.py` en la VM, con las tres corridas pareadas.
+- Primera corrida real de `Fase_3_lab.py` y `Fase_4_lab.py` en la VM, con las cadenas pareadas de arriba.
 - ~~Fase 4.5~~ **hecho (2026-11-04):** `Fase_4_5_lab_A/B.py` leen el tag del lab y `tam_*`. Controles L9–L11 pasan en datos sintéticos; no corrieron con datos reales.
 - La escala de Fase 4.5 se calcula sobre todo el parquet (el EA la aplica siempre); la de Fase 4 solo existe en la ventana IS+OOS del fold. Coinciden en el OOS del fold, que es donde Fase 4.5 chequea paridad.
 - Compilar `EA_V12.01_LAB.txt` en MetaEditor y repetir M7 con un cerebro de modo A y otro de modo B.

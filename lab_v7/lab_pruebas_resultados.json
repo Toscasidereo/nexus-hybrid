@@ -109,6 +109,12 @@
    "nulo_cierre_carpetas_A_B_iguales": true,
    "metrica_v7_tag_igual_Fase4": true,
    "metrica_v7_carpetas_A_B_iguales": true,
+   "f3_v7_tag_igual_Fase4": true,
+   "f3_v7_carpetas_A_B_iguales": true,
+   "cadena_v7_tag_igual_Fase4": true,
+   "cadena_v7_carpetas_A_B_iguales": true,
+   "f3_v7_lleva_F3V7": true,
+   "patron_csv_f3_v7": true,
    "metrica_v7_lleva_MV7": true,
    "defecto_igual_main": true,
    "tamano_mas_nulo_rechazado": true
@@ -155,13 +161,15 @@
    "long_trades_suficientes": true,
    "long_4_salidas_iguales_bit_a_bit": true,
    "long_ent_menor_sal": true,
+   "long_v7_acepta_la_tabla": true,
    "long_pip_neto": true,
    "short_trades_suficientes": true,
    "short_4_salidas_iguales_bit_a_bit": true,
-   "short_ent_menor_sal": false,
+   "short_ent_menor_sal": true,
+   "short_v7_acepta_la_tabla": true,
    "short_pip_neto": true
   },
-  "pasa": false
+  "pasa": true
  },
  "L16_Fase3_lab_defecto_igual_main": {
   "detalle": {
@@ -171,5 +179,5 @@
   },
   "pasa": true
  },
- "todas_pasan": false
+ "todas_pasan": true
 }
