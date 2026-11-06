@@ -33,3 +33,17 @@ Las constantes finas (rangos de Optuna, mínimos de operaciones, alphas, grilla 
 - Cambiar la geometría invalida los CSV de Fase 3: se vuelve a correr.
 - Con recursos escasos, no repitas Fase 3 porque sí: es la fase pesada.
 - Nada de esto corrió con datos reales todavía. La primera corrida real es la prueba.
+
+## 4. Cuántas configuraciones pasa cada fase (verificado en el código)
+- **Fase 3** escribe hasta `TOP_REPORTE`=100 filas por (fold, dirección, símbolo). Con 2 folds: hasta 200 por dirección. El nulo (R=20) corre SOLO sobre ese top, al final; durante la búsqueda Optuna usa R=0.
+- **Fase 4** lee TODAS esas filas (`TOP_CANDIDATOS`=1000 no limita: hay a lo sumo 200 por dirección). Cada fila es un candidato: entrena Ridge 1 y 2, escanea K y evalúa OOS. No hay una segunda selección previa.
+- En Fase 4 el nulo NO se aplica a una selección: cada evaluación de Score_v7 lleva R=20 réplicas dentro del cálculo (≈15 evaluaciones por candidato). Medido con datos sintéticos: ~7 ms con R=0 y ~12 ms con R=20 por evaluación. Con datos reales puede variar.
+- Exporta los 10 mejores por dirección (`EXPORTAR_MQL5_TOP`=10). **Fase 4.5** simula esos 10 ranks.
+- `NEXUS_LAB_NULO=1` es otra cosa: una corrida completa aparte con el objetivo barajado, solo diagnóstico, nunca exportable.
+
+## 5. En Jupyter (Ubuntu)
+- Sube el zip con el explorador de archivos de Jupyter y descomprime en una celda: `!unzip -q nexus-hybrid-lab-v7.zip`.
+- Las corridas largas NO deben ir en una celda normal: si se cierra el navegador o el kernel, se cortan. Abre una terminal de Jupyter (File → New → Terminal) y lanza en segundo plano:
+  `cd carpeta_de_trabajo && nohup bash ../nexus-hybrid-lab-v7/lab_v7/correr_tablero.sh f3 > f3.log 2>&1 &`
+  y mira el avance con `tail -f f3.log`. Lo mismo con `f4`.
+- Si Jupyter corre en un contenedor sin `bash`/`nohup`, avísame el mensaje de error.
