@@ -88,14 +88,14 @@ assert ESCALON in ('E0', 'E1', 'E2', 'E3')
 
 # [LAB-V7] mismo tag que Fase_4_lab.py (variables NEXUS_LAB_*; apagadas = idéntico a la Fase 4.5 de main)
 LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' | 'B'
-LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips'
+LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips' | 'V3'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' | 'v7' (solo cambia el tag: 4.5 no usa Score_v7)
 LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
 assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
 assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
-assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
 assert not (LAB_NULO and LAB_TAMANO != 'off'), "Gemelo nulo con Ridge de tamaño no es exportable: la escala desplazada no sale en el .txt"
 LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main')
 _SUF_LAB = (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_NULO" if LAB_NULO else "")) if LAB_ACTIVO else ""

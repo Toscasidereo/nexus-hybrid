@@ -1,0 +1,65 @@
+{
+ "V1_descriptores_a_mano": {
+  "detalle": {
+   "foto5_descriptores": true,
+   "rec_no_aplica_sin_fondo": true,
+   "rec_neutro_en_S": true
+  },
+  "pasa": true
+ },
+ "V2_causalidad": {
+  "detalle": {
+   "vivo_ultima_foto_igual_terminal": true,
+   "invariancia_de_prefijo": true
+  },
+  "pasa": true
+ },
+ "V3_no_mecanica": {
+  "detalle": {
+   "deriva_positiva_dif_mediana": -0.0709,
+   "deriva_positiva_ok": true,
+   "deriva_cero_dif_mediana": -0.0155,
+   "deriva_cero_ok": true
+  },
+  "pasa": true
+ },
+ "V4_contra_sustitutos": {
+  "detalle": {
+   "mediana_informativas": 0.6656,
+   "mediana_azar": 0.3672
+  },
+  "pasa": true
+ },
+ "V5_aprendibilidad": {
+  "detalle": {
+   "R2_lineal": 0.9332,
+   "R2_permutado": -0.0038
+  },
+  "pasa": true
+ },
+ "V6_compuesto": {
+  "detalle": {
+   "V3_en_0_1": true,
+   "pesos_suman_1": true,
+   "no_aplicable_en_05": true,
+   "terminal_constante_por_trade": true
+  },
+  "pasa": true
+ },
+ "V7_integracion_Fase4_lab": {
+  "detalle": {
+   "long_un_valor_por_foto_finito_0_1": true,
+   "long_constante_por_trade": true,
+   "long_descriptores_en_dict": true,
+   "long_grilla_percentiles": true,
+   "long_T_terminal_sin_cambio": true,
+   "short_un_valor_por_foto_finito_0_1": true,
+   "short_constante_por_trade": true,
+   "short_descriptores_en_dict": true,
+   "short_grilla_percentiles": true,
+   "short_T_terminal_sin_cambio": true
+  },
+  "pasa": true
+ },
+ "todas_pasan": true
+}

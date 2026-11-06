@@ -105,3 +105,10 @@ La mejora cuenta si la cadena 4 supera a la 1 en el OOS y en la ventana ciega de
 - ~~Fase 4.5~~ **hecho (2026-11-04):** `Fase_4_5_lab_A/B.py` leen el tag del lab y `tam_*`. Controles L9–L11 pasan en datos sintéticos; no corrieron con datos reales.
 - La escala de Fase 4.5 se calcula sobre todo el parquet (el EA la aplica siempre); la de Fase 4 solo existe en la ventana IS+OOS del fold. Coinciden en el OOS del fold, que es donde Fase 4.5 chequea paridad.
 - Compilar `EA_V12.01_LAB.txt` en MetaEditor y repetir M7 con un cerebro de modo A y otro de modo B.
+
+---
+## Vida v3 y tablero de control (2026-11-06)
+- `vida_v3.py`: cinco descriptores de la vida del trade (EFR, D_h, FET_v3, REC, RIT) y compuesto V3 (pesos iguales 0.2, valores de partida). Constantes de normalización solo del IS. Especificación: `ESPECIFICACION_VIDA_V3.md`. Pruebas: `vida_pruebas.py` (V1–V7).
+- `NEXUS_LAB_CIERRE=V3`: el Ridge 2 aprende V3 terminal; la Cabeza B sigue en T_terminal (H-V7-08); el ΔT vivo sigue usando T(t) (H-V7-05). El EA no cambia.
+- **Tablero único**: edita `tablero_lab.env` y corre `bash correr_tablero.sh [f3|f4|todo]` desde la carpeta con los parquets de Fase 1&2. Valida los valores antes de lanzar. Los scripts anteriores (`correr_lab.sh`, `correr_f3_lab.sh`) siguen funcionando.
+- Límites declarados: nada corrió con datos reales; el humo con V3 ejecuta el camino hasta la evaluación OOS pero no el export (datos de prueba sin trades suficientes); el EA lab no está compilado en MetaEditor.

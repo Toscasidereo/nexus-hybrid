@@ -3,6 +3,14 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V7 V0.5 (2026-11-06) — VIDA v3 COMO TARGET DE RIDGE 2 (orden del CRO: aprobó el diseño de la métrica de la vida del trade y pidió implementarlo):
+#      • NEXUS_LAB_CIERRE = V3: el Ridge 2 aprende `V3` terminal (compuesto de 5 descriptores: captura, hundimiento, tiempo a favor, recuperación,
+#        ritmo; ver vida_v3.py y ESPECIFICACION_VIDA_V3.md). Constantes de normalización (med, escala) y `h` solo del IS de cada candidato.
+#        Grilla de K = percentiles 0..50 de la predicción IS (como dT_cont y G_pips). El EA no cambia (solo compara T_pred < K_abortar).
+#      • Con V3 el reporte agrega R2V_EFR, R2V_D_h, R2V_FET_v3, R2V_REC, R2V_RIT, R2V_V3 (R² fuera de pliegue, GroupKFold por trade, sobre las
+#        fotos del IS usadas para entrenar) y Corr_max_desc (máx. |correlación| entre los 5 descriptores terminales). Es la prueba de aprendibilidad.
+#      • NO cambia: la Cabeza B de Ridge 1 (sigue con T_terminal; ver ESPECIFICACION §4, H-V7-08) ni las variables de entrada de Ridge 2 (ΔT con T(t)).
+#      • Defecto (cierre = T_terminal) = main; no se importa nada nuevo en la ruta por defecto salvo el módulo vida_v3.
 # 📋 BITÁCORA LAB-V7 V0.4 (2026-11-04) — MÉTRICA DE SELECCIÓN (orden del CRO: mejorar las métricas con las que Fase 4 selecciona, para comparar con las anteriores):
 #      • NEXUS_LAB_METRICA = final | v7. `final` (defecto) = Score_final, idéntico a main. `v7` reemplaza r[0] (el puntaje) por Score_v7
 #        en: gate de la base IS, escaneo de K (elige el K de mayor Score_v7 IS), puntaje OOS, ClaveRank/Score_flujo. Resto de r[...] intacto.
@@ -266,6 +274,7 @@ from nexus_formulas_core import (
 
 import nexus_tablero as TAB   # [TABLERO] fuente única de folds / IS-OOS / reserva ciega / MEMORIA_FIFO
 import v7_metricas as V7   # [LAB-V7 V0.4] Score_v7 / T_v2
+import vida_v3 as VV       # [LAB-V7 V0.5] Vida v3
 from lab_escala import lab_actividad_nb, lab_fase_nb, _lab_esc_A_nb, _lab_esc_B_nb   # [LAB-V7 V0.3] kernels compartidos con Fase_4_5_lab_A
 
 warnings.simplefilter('ignore')
@@ -332,13 +341,13 @@ MIN_OPS_IS_LAB = 20 if _GATE_T_ACTIVO else MIN_OPS_IS_REPORTE
 MIN_TRADES_SUPERV_IS = 20 if _GATE_T_ACTIVO else MIN_OPS_IS_REPORTE  
 # [LAB-V7] interruptores del laboratorio (por defecto todo apagado = comportamiento de main)
 LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' | 'B'
-LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips'
+LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips' | 'V3'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' = Score_final (main) | 'v7' = Score_v7 en la selección
 LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
 assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
-assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
 assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
 LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main')
 LAB_V7_OPCION = 'A'      # alfa neutral a la deriva local (opción A de la propuesta)   [DEFAULT / CRO-OVERRIDE]
@@ -1469,7 +1478,8 @@ def _fila_reporte(simbolo, dir_nombre, idx, c, st):
         'MedProfitPips_OOS_Ridge': "RECHAZADO" if rech else round(c['MedProfitPips_Ridge'], 1),
         'MedProfitPips_OOS_Superv': round(c['MedProfitPips_Superv'], 1),
         'N_Cand_OOS_Evaluados': st['n_eval'], 'N_Cand_Compuerta_OK': st['n_ok'],
-        'Mediana_ScoreOOS_Todos': round(st['med_score_oos'], 2)
+        'Mediana_ScoreOOS_Todos': round(st['med_score_oos'], 2),
+        **({} if LAB_CIERRE != 'V3' else {**{f'R2V_{n}': (round(v, 4) if v == v else 'NA') for n, v in zip(VV.DESCRIPTORES + ('V3',), c['VIDA'].get('r2', [float('nan')] * 6))}, 'Corr_max_desc': (round(c['VIDA'].get('corr_max', float('nan')), 3) if c['VIDA'] else 'NA')})
     }
 
 def _escritura_atomica(ruta, contenido_o_df, es_df=False):
@@ -1606,10 +1616,15 @@ def lab_escanear_k_v7(sim_ix, grid, dircode, O, H, L, pm, c, min_trades, seed):
     return mejor_k, mejor_r, mejor_ex
 
 
-def lab_target_cierre(modo, y_target, tsc_snap, prof_snap, tid_snap):
-    """Target de Ridge 2 por foto. T_terminal => sin cambio. dT_cont = T_terminal - T_obs(t). G_pips = pips finales del trade - profit_apertura(t)."""
+def lab_target_cierre(modo, y_target, tsc_snap, prof_snap, tid_snap, mfe_snap=None, mae_snap=None, vela_snap=None, spread=None, h=None, vida_out=None):
+    """Target de Ridge 2 por foto. T_terminal => sin cambio. dT_cont = T_terminal - T_obs(t). G_pips = pips finales del trade - profit_apertura(t).
+    V3 = Vida v3 terminal del trade (vida_v3.py); si se pasa `vida_out` (dict) se llena con el resultado completo (descriptores) para el reporte."""
     if len(tid_snap) == 0 or modo == 'T_terminal':
         return y_target
+    if modo == 'V3':
+        v = VV.vida_v3(prof_snap, mfe_snap, mae_snap, tid_snap, vela_snap, float(spread), float(h))
+        if vida_out is not None: vida_out.update(v)
+        return v['V3_term']
     if modo == 'dT_cont':
         return (y_target - tsc_snap).astype(np.float32)
     tids, rev = np.unique(tid_snap[::-1], return_index=True)       # última foto de cada trade = vela de cierre
@@ -1833,8 +1848,20 @@ def procesar_simbolo(SIMBOLO):
                     arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO,
                     W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, W_T, B_T, T_min, ESC[start_train:end_train]
                 )
-                y_target = lab_target_cierre(LAB_CIERRE, y_target, tsc_snap, prof_snap, tid_snap)   # [LAB-V7] (T_terminal = main)
+                _VIDA = {}
+                H_VIDA = None
+                if LAB_CIERRE == 'V3':
+                    try: H_VIDA = V7.escala_h(opens_arr[start_train:end_train], float(PIPS_MULT))   # [LAB-V7 V0.5] h solo del IS (Close ≈ Open)
+                    except ValueError as e_h: return desc(str(e_h))
+                y_target = lab_target_cierre(LAB_CIERRE, y_target, tsc_snap, prof_snap, tid_snap, mfe_snap, mae_snap, vela_snap, SPREAD_ACTIVO, H_VIDA, _VIDA)   # [LAB-V7] (T_terminal = main)
                 _m = vela_snap > INMUNIDAD_VELAS_EFECTIVA
+                if LAB_CIERRE == 'V3' and _VIDA and _m.sum() > 50:
+                    _Y6 = np.column_stack([_VIDA['S_term'][_m], _VIDA['V3_term'][_m].astype(np.float64)])
+                    _r2 = VV.r2_agrupado(x_traj[_m][:, :N_FEAT_SUPERV], _Y6, tid_snap[_m])
+                    _ult, _ = VV._ultimas_fotos(tid_snap)
+                    _cc = np.corrcoef(_VIDA['S'][_ult].T) if len(_ult) > 5 else np.eye(5)
+                    _off = np.abs(_cc[~np.eye(5, dtype=bool)]); PAR_VIDA = {'r2': [float(v) for v in _r2], 'corr_max': float(np.nanmax(_off)) if _off.size else float('nan')}
+                else: PAR_VIDA = {}
                 x_traj = x_traj[_m]; y_target = y_target[_m]; tid_snap = tid_snap[_m]
                 if len(x_traj) == 0: return desc("Trayectoria_vacia")
                 if LAB_NULO: y_target = rng_lab.permutation(y_target)      # [LAB-V7] gemelo nulo de Ridge 2
@@ -1875,7 +1902,7 @@ def procesar_simbolo(SIMBOLO):
 
                 if score_flujo > 0 and trades_superv >= MIN_OPS_OOS_EXPORT:
                     return {
-                        'row': row, 'TAM': PAR_TAM, 'W_R': W_R, 'B_R': B_R, 'med_v': med_v, 'mad_v': mad_v, 'atrac_t': atrac_t,
+                        'row': row, 'TAM': PAR_TAM, 'VIDA': PAR_VIDA, 'W_R': W_R, 'B_R': B_R, 'med_v': med_v, 'mad_v': mad_v, 'atrac_t': atrac_t,
                         'W_S': W_S, 'B_S': B_S, 'K_opt': K_opt, 'ScoreK_IS': score_k_is,
                         'ClaveRank': clave_rank,
                         'ScoreFlujo': score_flujo, 'Retencion': retencion * 100, 'Retencion_Raw': retencion_raw * 100,

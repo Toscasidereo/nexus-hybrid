@@ -242,7 +242,9 @@ def main():
                         ('nulo_cierre', {'NEXUS_LAB_CIERRE': 'G_pips', 'NEXUS_LAB_NULO': '1'}),
                         ('metrica_v7', {'NEXUS_LAB_METRICA': 'v7'}),
                         ('f3_v7', {'NEXUS_LAB_F3': 'v7'}),
-                        ('cadena_v7', {'NEXUS_LAB_METRICA': 'v7', 'NEXUS_LAB_F3': 'v7'})):
+                        ('cadena_v7', {'NEXUS_LAB_METRICA': 'v7', 'NEXUS_LAB_F3': 'v7'}),
+                        ('vida_v3', {'NEXUS_LAB_CIERRE': 'V3'}),
+                        ('cadena_v7_vida', {'NEXUS_LAB_METRICA': 'v7', 'NEXUS_LAB_F3': 'v7', 'NEXUS_LAB_CIERRE': 'V3', 'NEXUS_LAB_TAMANO': 'A'})):
         c4, t4 = val('Fase_4_lab', 'X.TAG_ARCHIVOS', env)
         cA, tA = val('Fase_4_5_lab_A', 'X.TAG_ARCHIVOS_FASE4', env)
         cA2, dA = val('Fase_4_5_lab_A', 'X.DIR_SALIDA', env)
