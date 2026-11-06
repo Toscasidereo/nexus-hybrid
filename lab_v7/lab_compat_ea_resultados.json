@@ -1,0 +1,80 @@
+{
+ "C1_bloque_compila_contra_structs_del_EA": {
+  "detalle": {
+   "compila_tam_off_L": true,
+   "compila_tam_off_S": true,
+   "compila_tam_A_L": true,
+   "compila_tam_A_S": true,
+   "compila_tam_B_L": true,
+   "compila_tam_B_S": true
+  },
+  "pasa": true
+ },
+ "C2_cobertura_de_indices": {
+  "detalle": {
+   "w_10_off_L": true,
+   "w_T_10_off_L": true,
+   "w_superv_off_L": true,
+   "sin_tam_en_off_L": true,
+   "w_10_off_S": true,
+   "w_T_10_off_S": true,
+   "w_superv_off_S": true,
+   "sin_tam_en_off_S": true,
+   "w_10_A_L": true,
+   "w_T_10_A_L": true,
+   "w_superv_A_L": true,
+   "tam_w_11_L": true,
+   "tam_mu_11_L": true,
+   "tam_sd_11_L": true,
+   "w_10_A_S": true,
+   "w_T_10_A_S": true,
+   "w_superv_A_S": true,
+   "tam_w_11_S": true,
+   "tam_mu_11_S": true,
+   "tam_sd_11_S": true,
+   "w_10_B_L": true,
+   "w_T_10_B_L": true,
+   "w_superv_B_L": true,
+   "w_10_B_S": true,
+   "w_T_10_B_S": true,
+   "w_superv_B_S": true
+  },
+  "pasa": true
+ },
+ "C3_escala_EA_compilada_vs_Python": {
+  "detalle": {
+   "A_arnes_compila": true,
+   "A_actividad_EA_igual_Python": true,
+   "A_escala_EA_igual_Python_con_texto": true,
+   "B_arnes_compila": true,
+   "B_actividad_EA_igual_Python": true,
+   "B_escala_EA_igual_Python_con_texto": true
+  },
+  "pasa": true
+ },
+ "C4_T_pred_EA_compilada_vs_Python": {
+  "detalle": {
+   "A_n_features": 10,
+   "A_T_pred_EA_igual_kernel_Python_bit_a_bit": true,
+   "A_T_pred_filas_distintas": 0,
+   "A_T_pred_max_abs": 0.0,
+   "A_cruces_K_distintos": 0,
+   "B_n_features": 10,
+   "B_T_pred_EA_igual_kernel_Python_bit_a_bit": true,
+   "B_T_pred_filas_distintas": 0,
+   "B_T_pred_max_abs": 0.0,
+   "B_cruces_K_distintos": 0
+  },
+  "pasa": true
+ },
+ "C5_efecto_del_redondeo_de_export": {
+  "detalle": {
+   "A_escala_redondeo_max_abs": 0.0,
+   "A_escala_redondeo_filas_distintas": 0,
+   "B_escala_redondeo_max_abs": 0.0,
+   "B_escala_redondeo_filas_distintas": 0
+  },
+  "informativo": true
+ },
+ "todas_pasan": true
+}

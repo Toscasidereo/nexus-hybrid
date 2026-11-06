@@ -22,6 +22,11 @@
 //    - Los modos de CIERRE del lab (`dT_cont`, `G_pips`) no requieren cambios: mismos pesos `w_superv` y `k_abortar`.
 //    - Si no hay historia suficiente (iOpen <= 0) la actividad vale -1 y se usa `tam_a_is_med` (Python: NaN → mediana IS).
 //    - Estado: [PENDIENTE / NO VERIFICABLE] compilación en MetaEditor y paridad M7 con Python (Fase 4.5 aún no lee `tam_*`).
+// 📋 BITÁCORA LAB-V7 EA GEMELO V2 (2026-11-06) — Orden del CRO: "adaptar todo, comprobar bit a bit".
+//    - [H-EA-ULP] En el Ridge 2 de 10 características el EA sumaba `s + (w8*dT + w9*(dT*Theta))`; el kernel Python suma `((s + w8*dT) + w9*(dT*Theta))`.
+//      La asociación distinta daba 1 ULP (2.2e-16) de diferencia en ~20% de las evaluaciones (prueba lab_compat_ea.py C4). Ahora se suma en dos pasos
+//      secuenciales (toro y oso). Solo en este EA gemelo; EA_V12.01.txt (main) NO se modifica.
+//    - `lab_v7/lab_compat_ea.py` compila con g++ el texto REAL de este archivo y lo compara bit a bit con Python (C1..C5).
 // ==============================================================================
 // ==============================================================================
 // 📋 BITÁCORA V12.02 (Auditoría M7 — paridad MQL5↔Python, parche H-EA-MAD-01 y H-EA-TG-01):
@@ -1016,8 +1021,8 @@ void AnalizarMercado(datetime target_time) {
                       double m_mae_s = MathMin(mae_previo, bruto_s);
                       double t_obs_s = CalcularTScoreTrade(m_mfe_s, m_mae_s, profit_apertura, (double)g_pares[i].t_gain_toro, (double)g_pares[i].t_loss_toro, costo_trx_dinamico);
                       double dT = MathMin(MathMax(t_obs_s - g_pares[i].t_hat0_toro, -1.0), 1.0);
-                      T_Pred_Live += (g_pares[i].superv_toro.w_superv[8] * dT) +
-                                     (g_pares[i].superv_toro.w_superv[9] * (dT * Theta));
+                      T_Pred_Live += (g_pares[i].superv_toro.w_superv[8] * dT);
+                      T_Pred_Live += (g_pares[i].superv_toro.w_superv[9] * (dT * Theta)); // LAB-V7 H-EA-ULP: suma secuencial = (s+a)+b, igual que el kernel Python
                   }
                   
                   T_Pred_Live += g_pares[i].superv_toro.b_superv;
@@ -1137,8 +1142,8 @@ void AnalizarMercado(datetime target_time) {
                       double m_mae_s = MathMin(mae_previo, bruto_s);
                       double t_obs_s = CalcularTScoreTrade(m_mfe_s, m_mae_s, profit_apertura, (double)g_pares[i].t_gain_oso, (double)g_pares[i].t_loss_oso, costo_trx_dinamico);
                       double dT = MathMin(MathMax(t_obs_s - g_pares[i].t_hat0_oso, -1.0), 1.0);
-                      T_Pred_Live += (g_pares[i].superv_oso.w_superv[8] * dT) +
-                                     (g_pares[i].superv_oso.w_superv[9] * (dT * Theta));
+                      T_Pred_Live += (g_pares[i].superv_oso.w_superv[8] * dT);
+                      T_Pred_Live += (g_pares[i].superv_oso.w_superv[9] * (dT * Theta)); // LAB-V7 H-EA-ULP: suma secuencial = (s+a)+b, igual que el kernel Python
                   }
                   
                   T_Pred_Live += g_pares[i].superv_oso.b_superv;

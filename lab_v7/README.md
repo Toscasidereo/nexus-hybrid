@@ -112,3 +112,9 @@ La mejora cuenta si la cadena 4 supera a la 1 en el OOS y en la ventana ciega de
 - `NEXUS_LAB_CIERRE=V3`: el Ridge 2 aprende V3 terminal; la Cabeza B sigue en T_terminal (H-V7-08); el ΔT vivo sigue usando T(t) (H-V7-05). El EA no cambia.
 - **Tablero único**: edita `tablero_lab.env` y corre `bash correr_tablero.sh [f3|f4|todo]` desde la carpeta con los parquets de Fase 1&2. Valida los valores antes de lanzar. Los scripts anteriores (`correr_lab.sh`, `correr_f3_lab.sh`) siguen funcionando.
 - Límites declarados: nada corrió con datos reales; el humo con V3 ejecuta el camino hasta la evaluación OOS pero no el export (datos de prueba sin trades suficientes); el EA lab no está compilado en MetaEditor.
+
+## Compatibilidad de cerebros con el EA lab (2026-11-06)
+`python lab_v7/lab_compat_ea.py` compila con g++ el texto REAL de `EA_V12.01_LAB.txt` y lo compara bit a bit con Python:
+C1 el bloque exportado por Fase 4 lab (long/short; tamaño off/A/B) compila contra los structs y enums del EA; C2 cobertura de índices; C3 escala de tamaño y actividad idénticas; C4 T_pred del Ridge 2 idéntico; C5 efecto del redondeo del export (0 en la escala).
+Hallazgo H-EA-ULP (cerrado en el EA lab): el EA sumaba w8·dT + w9·(dT·Θ) como un bloque, Python en secuencia; 1 ULP en ~20% de evaluaciones. EA main sin modificar (mismo patrón, abierto).
+Pendiente: compilación en MetaEditor (MQL5 real), y paridad de las características de entrada (Fid, D_, C_, T(t)) bajo el compilador de MetaQuotes.
