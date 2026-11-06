@@ -83,6 +83,13 @@ LISTA_SIMBOLOS = ['EURUSDm', 'EURJPYm', 'EURCADm', 'EURAUDm', 'EURGBPm', 'EURCHF
                   'USDCADm', 'USDJPYm', 'USDCHFm',
                   'CADCHFm', 'CADJPYm', 'CHFJPYm']
 
+# LAB-V7 (2026-11-06): lista de símbolos desde el tablero (NEXUS_LAB_SIMBOLOS="EURUSDm,GBPUSDm"); vacío = lista completa de arriba.
+if os.environ.get('NEXUS_LAB_SIMBOLOS', '').strip():
+    _lab_sel = [s.strip() for s in os.environ['NEXUS_LAB_SIMBOLOS'].split(',') if s.strip()]
+    _lab_mal = [s for s in _lab_sel if s not in LISTA_SIMBOLOS]
+    if _lab_mal: raise SystemExit(f"NEXUS_LAB_SIMBOLOS: símbolos desconocidos {_lab_mal}")
+    LISTA_SIMBOLOS = _lab_sel
+
 ESCALON = 'E3'                       # Escalón objetivo por defecto ('E0', 'E1', 'E2', 'E3')
 assert ESCALON in ('E0', 'E1', 'E2', 'E3')
 

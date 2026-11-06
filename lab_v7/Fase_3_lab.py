@@ -231,6 +231,13 @@ LISTA_SIMBOLOS =  ['EURUSDm', 'EURJPYm', 'EURCADm', 'EURAUDm', 'EURGBPm', 'EURCH
                   'NZDJPYm', 'NZDUSDm', 'NZDCHFm', 'NZDCADm',
                   'USDCADm', 'USDJPYm', 'USDCHFm', 'CADCHFm', 'CADJPYm', 'CHFJPYm']
 
+# LAB-V7 (2026-11-06): lista de símbolos desde el tablero (NEXUS_LAB_SIMBOLOS="EURUSDm,GBPUSDm"); vacío = lista completa de arriba.
+if os.environ.get('NEXUS_LAB_SIMBOLOS', '').strip():
+    _lab_sel = [s.strip() for s in os.environ['NEXUS_LAB_SIMBOLOS'].split(',') if s.strip()]
+    _lab_mal = [s for s in _lab_sel if s not in LISTA_SIMBOLOS]
+    if _lab_mal: raise SystemExit(f"NEXUS_LAB_SIMBOLOS: símbolos desconocidos {_lab_mal}")
+    LISTA_SIMBOLOS = _lab_sel
+
 # 🛡️ GATING Y LIMITES HPC BATCH
 # ------------------------------------------------------------------------------
 # 🔎 PRESUPUESTO DE BÚSQUEDA (V5.11) — se estampa completo en el CSV (columnas Busq_*)
@@ -239,6 +246,9 @@ MIN_OPS_IS_REPORTE = 200       # mínimo de operaciones IS: poda en el objetivo 
 MIN_OPS_OOS_REPORTE = 3        # mínimo de operaciones OOS para puntuar (antes literal 3, dos veces)
 N_SIMULACIONES = 20000         # trials COMPLETOS objetivo por (fold, dirección); tope de evaluados = N_SIMULACIONES * 20
 STARTUP_TRIALS = 5000          # trials aleatorios iniciales del TPE (cuentan completos Y podados)
+# LAB-V7: presupuesto desde el tablero (vacío = valores de arriba). Se estampa igual en el CSV (Busq_*).
+if os.environ.get('NEXUS_LAB_N_SIM', '').strip(): N_SIMULACIONES = int(os.environ['NEXUS_LAB_N_SIM'])
+if os.environ.get('NEXUS_LAB_STARTUP', '').strip(): STARTUP_TRIALS = int(os.environ['NEXUS_LAB_STARTUP'])
 TOP_REPORTE = 100
 if LAB_MEDIR:   # LAB-V7: modo de medición de costo (no cambia nada si LAB_MEDIR = 0)
     N_SIMULACIONES = LAB_MEDIR; STARTUP_TRIALS = max(1, LAB_MEDIR // 2); TOP_REPORTE = 10
