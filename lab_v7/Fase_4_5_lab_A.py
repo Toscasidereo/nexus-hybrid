@@ -63,6 +63,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 from numba import njit, set_num_threads
 
+from vida_v3 import v3_vivo_nb   # [LAB-V8] núcleo de Vida v3 compartido con Fase 4 lab y el EA
 from nexus_formulas_core import (
     eval_robustez_numba_v6, calcular_t_score_trade_numba, FORMULAS_CORE_VERSION
 )
@@ -97,15 +98,20 @@ assert ESCALON in ('E0', 'E1', 'E2', 'E3')
 LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' | 'B'
 LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips' | 'V3'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
+LAB_T = os.environ.get('NEXUS_LAB_T', 'T')            # [LAB-V8] 'T' | 'V3' (solo cambia el tag en B; en A también activa Vida si el cerebro la trae)
+LAB_VIDA = os.environ.get('NEXUS_LAB_VIDA', '3.0')    # [LAB-V8] '3.0' | '3.1'
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' | 'v7' (solo cambia el tag: 4.5 no usa Score_v7)
 LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
 assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
 assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
-assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_T in ('T', 'V3'), f"NEXUS_LAB_T invalido: {LAB_T}"
+assert LAB_VIDA in ('3.0', '3.1'), f"NEXUS_LAB_VIDA invalido: {LAB_VIDA}"
+LAB_USA_VIDA = (LAB_T == 'V3') or (LAB_CIERRE in ('V3', 'dV3'))
 assert not (LAB_NULO and LAB_TAMANO != 'off'), "Gemelo nulo con Ridge de tamaño no es exportable: la escala desplazada no sale en el .txt"
-LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main')
-_SUF_LAB = (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_NULO" if LAB_NULO else "")) if LAB_ACTIVO else ""
+LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main') or (LAB_T != 'T') or (LAB_VIDA != '3.0')
+_SUF_LAB = (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_TV3" if LAB_T == "V3" else "") + ("_VID31" if (LAB_VIDA == "3.1" and LAB_USA_VIDA) else "") + ("_NULO" if LAB_NULO else "")) if LAB_ACTIVO else ""
 TAG_ARCHIVOS_FASE4 = f"PROD_V12_{ESCALON}" + _SUF_LAB  # Sincronizado con Fase 4 V12.0 / Fase_4_lab.py
 DIR_ENTRADA = "."
 DIR_SALIDA = f"F45_V12_{ESCALON}" + _SUF_LAB
@@ -197,6 +203,19 @@ def _parse_lado(cuerpo, cfg, lado):
             'chasquido': _flt(cuerpo, f"cfg.{cfg}.chasquido_{lado}")}
 
 
+def parse_vida(cuerpo, sv):
+    """[LAB-V8] Constantes de Vida v3 (vector v3p de 18 valores) del bloque, o None si el bloque no las trae (lab-v7 / main / EA V12.01)."""
+    if not re.search(r'g_pares\[idx\]\.' + re.escape(sv) + r'\.vida_activa\s*=\s*true', cuerpo):
+        return None
+    v = np.zeros(18)
+    v[0] = _flt(cuerpo, f"{sv}.vida_h"); v[1] = _flt(cuerpo, f"{sv}.vida_rit_vmin"); v[2] = _flt(cuerpo, f"{sv}.vida_rec_na")
+    for nom, a in (('vida_med', 3), ('vida_esc', 8), ('vida_peso', 13)):
+        v[a:a + 5] = [_flt(cuerpo, f"{sv}.{nom}[{k}]") for k in range(5)]
+    if not (np.isfinite(v).all() and v[0] > 0 and v[1] >= 1.0 and (v[8:13] > 0).all()):
+        raise ErrorConfig("vida_parametros_invalidos")
+    return v
+
+
 def parse_tam(cuerpo, ml):
     """[LAB-V7] Parámetros del Ridge de tamaño del bloque, o None si el bloque no los trae (main / EA V12.01)."""
     if not re.search(r'g_pares\[idx\]\.' + re.escape(ml) + r'\.tam_modo\s*=', cuerpo):
@@ -268,6 +287,7 @@ def _parse_bloque(direccion, rank, fold, cuerpo, escalon_txt):
     }
 
     m['tam'] = parse_tam(cuerpo, ml)
+    m['vida'] = parse_vida(cuerpo, sv)   # [LAB-V8]
     if m['ml']['atrac_t'] <= 0 or m['ml']['mad_v'] <= 0 or m['ml']['tolerancia_vida'] <= 0:
         raise ErrorConfig("parametros_no_positivos(atrac_t/mad_v/tolerancia_vida)")
     return m
@@ -492,7 +512,7 @@ def simular_motor(
     W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, ratio_captura, tolerancia_vida,
     activar_superv, W_S, B_S, K_abortar,
     inmunidad_velas, n_features_superv,
-    cabeza_t_activa, W_T, B_T, T_min, escala_v):
+    cabeza_t_activa, W_T, B_T, T_min, escala_v, v3p=None):
     """
     Simulador Gemelo Digital V12.0 (Superset Universal E0..E3).
     Soporta:
@@ -508,6 +528,7 @@ def simular_motor(
     pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
     t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False; T_hat0 = 0.0
     mae_previo = 0.0; mfe_actual = 0.0; profit_apertura = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
     lim_T_seguro = (atrac_t * tolerancia_vida) + 1e-9 if atrac_t > 0 else 50.0
 
     for i in range(1, n_velas - 1):
@@ -531,6 +552,11 @@ def simular_motor(
                 mae_previo = (p_in - max_v) * pips_mult; mfe_actual = (p_in - min_v) * pips_mult
                 profit_apertura = ((p_in - opens_arr[i+1]) * pips_mult) - spread_pips
             closed = False; m_mae = mae_previo; tipo = 0; t_pred = np.nan
+            if v3p is not None:   # [LAB-V8] estado vivo de Vida v3
+                if velas_abiertas >= 2.0:
+                    cn_v += 1.0
+                    if profit_apertura > 0.0: cg_v += 1.0
+                if profit_apertura < minp_v: minp_v = profit_apertura; vfondo_v = velas_abiertas
 
             # 1. TimeStop / 2. SmartTrailing (Brazo Ofensivo)
             if atrac_t > 0 and velas_abiertas > lim_T_seguro:
@@ -569,7 +595,10 @@ def simular_motor(
                     m_mfe_s = max(mfe_actual, bruto_s); m_mae_s = min(mae_previo, bruto_s)
                     t_obs_s = calcular_t_score_trade_numba(m_mfe_s, m_mae_s, profit_apertura, t_gain, t_loss, spread_pips)
                     dT = min(max(t_obs_s - T_hat0, -1.0), 1.0)
-                    t_pred += (W_S[8]*dT) + (W_S[9]*(dT * Theta))
+                    if v3p is not None:   # [LAB-V8] ΔT con Vida v3 vivo
+                        dT = min(max(v3_vivo_nb(profit_apertura, m_mfe_s, m_mae_s, velas_abiertas, cg_v, cn_v, minp_v, vfondo_v, spread_pips, v3p) - T_hat0, -1.0), 1.0)
+                    t_pred += (W_S[8]*dT)   # [LAB-V8 H-EA-ULP] suma secuencial: igual que el kernel de Fase 4 y que el EA gemelo
+                    t_pred += (W_S[9]*(dT * Theta))
 
                 t_pred += B_S
                 if t_pred < K_abortar:
@@ -623,6 +652,7 @@ def simular_motor(
                 if autorizado:
                     pos = direccion; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
                     v_req = v_req_tmp * escala_v[i]; Z_pred = z_tmp; T_hat0 = min(max(t_raw, 0.0), 1.0)
+                    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
                     t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False
 
     # Cierre forzado EOF
@@ -908,6 +938,7 @@ def procesar_simbolo(sim, ctx):
         arm_o, chq_o = m['Out']['armado'], m['Out']['chasquido']
 
         tam = m.get('tam')   # [LAB-V7]
+        v3p_m = m.get('vida')   # [LAB-V8]
         if tam is None:
             ESC_m = np.ones(N, dtype=np.float64)
         else:
@@ -930,7 +961,7 @@ def procesar_simbolo(sim, ctx):
                                  ml['ratio_captura'], ml['tolerancia_vida'],
                                  superv, sv['w'], sv['bias'], sv['k'],
                                  sv['inmunidad_velas'], sv['n_features'],
-                                 ml['cabeza_t_activa'], ml['w_T'], ml['bias_T'], ml['t_min'], ESC_m[a:b])
+                                 ml['cabeza_t_activa'], ml['w_T'], ml['bias_T'], ml['t_min'], ESC_m[a:b], *((v3p_m,) if v3p_m is not None else ()))
 
         a_pf, b_pf = vent_pf
         try:

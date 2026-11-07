@@ -274,7 +274,8 @@ from nexus_formulas_core import (
 
 import nexus_tablero as TAB   # [TABLERO] fuente única de folds / IS-OOS / reserva ciega / MEMORIA_FIFO
 import v7_metricas as V7   # [LAB-V7 V0.4] Score_v7 / T_v2
-import vida_v3 as VV       # [LAB-V7 V0.5] Vida v3
+import vida_v3 as VV
+from vida_v3 import v3_vivo_nb   # [LAB-V8] núcleo de Vida v3 compartido con los simuladores       # [LAB-V7 V0.5] Vida v3
 from lab_escala import lab_actividad_nb, lab_fase_nb, _lab_esc_A_nb, _lab_esc_B_nb   # [LAB-V7 V0.3] kernels compartidos con Fase_4_5_lab_A
 
 warnings.simplefilter('ignore')
@@ -350,19 +351,25 @@ MIN_TRADES_SUPERV_IS = 20 if _GATE_T_ACTIVO else MIN_OPS_IS_REPORTE
 LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' | 'B'
 LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips' | 'V3'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
+# [LAB-V8] Vida v3 extendida: NEXUS_LAB_T = T (defecto, como lab-v7) | V3 (Cabeza B y ΔT con V3); NEXUS_LAB_VIDA = 3.0 (defecto) | 3.1 (parches H-V3-02/03)
+LAB_T = os.environ.get('NEXUS_LAB_T', 'T')
+LAB_VIDA = os.environ.get('NEXUS_LAB_VIDA', '3.0')
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' = Score_final (main) | 'v7' = Score_v7 en la selección
 LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
 assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
-assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_T in ('T', 'V3'), f"NEXUS_LAB_T invalido: {LAB_T}"
+assert LAB_VIDA in ('3.0', '3.1'), f"NEXUS_LAB_VIDA invalido: {LAB_VIDA}"
+LAB_USA_VIDA = (LAB_T == 'V3') or (LAB_CIERRE in ('V3', 'dV3'))   # [LAB-V8] ¿se calcula Vida v3 en esta corrida?
 assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
-LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main')
+LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main') or (LAB_T != 'T') or (LAB_VIDA != '3.0')
 LAB_V7_OPCION = 'A'      # alfa neutral a la deriva local (opción A de la propuesta)   [DEFAULT / CRO-OVERRIDE]
 LAB_V7_R = 20            # réplicas del gemelo de captura (C3)                          [DEFAULT / CRO-OVERRIDE]
 ACT_VENTANA = 60
 ESCALA_MIN, ESCALA_MAX = 0.25, 4.0
 PERCENTILES_K_LAB = np.arange(0, 55, 5)
-TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
+TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_TV3" if LAB_T == "V3" else "") + ("_VID31" if (LAB_VIDA == "3.1" and LAB_USA_VIDA) else "") + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
 COLS_REQ_FASE3 = ['Dir', 'Fold', 'Rank', '⚖️ BASE IN', '📊 ACUM IN', '⚙️ Arm_IN', '⚡ Chq_IN', '⚖️ BASE OUT', '📊 ACUM OUT', '⚙️ Arm_OUT', '⚡ Chq_OUT']
 MARCOS_VALIDOS = ('Fast', 'Mid', 'Slow')
 
@@ -575,10 +582,11 @@ def rolling_median_causal_numba(extremos_ciclo, direction=1, memoria_fifo=100, m
 def extractor_ml_long(
     signos_in, extremo_in, sat_inf_in, acum_in, signos_out, extremo_out, sat_sup_out, acum_out,
     z_base_in, in_v, in_a, z_base_out, out_v, out_a, z_macro_1, z_macro_2,
-    opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas, armado_in, chasquido_in, armado_out, chasquido_out, spread_pips):
+    opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas, armado_in, chasquido_in, armado_out, chasquido_out, spread_pips, v3_cols=None):
     pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; tuvo_iter = False; t_gain = 0.0; t_loss = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
     max_trades = (n_velas // 2) + 5
-    dataset = np.empty((max_trades, 16), dtype=np.float32); cnt = 0; foto_X = np.zeros(10, dtype=np.float32)
+    dataset = np.empty((max_trades, (16 if v3_cols is None else 19)), dtype=np.float32); cnt = 0; foto_X = np.zeros(10, dtype=np.float32)
 
     for i in range(1, n_velas - 1):
         if pos == 1:
@@ -589,18 +597,27 @@ def extractor_ml_long(
                 else: t_loss += 1.0
             if highs_arr[i] > max_v: max_v = highs_arr[i]
             if lows_arr[i] < min_v: min_v = lows_arr[i]
+            if v3_cols is not None:   # [LAB-V8] estado vivo de Vida v3
+                v_v3 = max(float(i - idx_in + 1), 1.0); p_v3 = ((opens_arr[i+1] - p_in) * pips_mult) - spread_pips
+                if v_v3 >= 2.0:
+                    cn_v += 1.0
+                    if p_v3 > 0.0: cg_v += 1.0
+                if p_v3 < minp_v: minp_v = p_v3; vfondo_v = v_v3
             if signos_out[i] > 0 and extremo_out[i] >= (sat_sup_out[i] * armado_out) and acum_out[i] <= (extremo_out[i] * (1.0 - chasquido_out)):
                 p_out = opens_arr[i+1]; prof_bruto = (p_out - p_in) * pips_mult
                 if cnt < max_trades:
                     dataset[cnt, 0:10] = foto_X; dataset[cnt, 15] = float(idx_in - 1); dataset[cnt, 10] = prof_bruto - spread_pips
                     dataset[cnt, 11] = min((min_v - p_in)*pips_mult, prof_bruto); dataset[cnt, 12] = max((max_v - p_in)*pips_mult, prof_bruto); dataset[cnt, 13] = float(max((i + 1) - idx_in, 1))
                     dataset[cnt, 14] = calcular_t_score_trade_numba(dataset[cnt, 12], dataset[cnt, 11], dataset[cnt, 10], t_gain, t_loss, spread_pips)
+                    if v3_cols is not None:
+                        dataset[cnt, 16] = 0.5 if dataset[cnt, 13] <= 2.0 else cg_v / cn_v; dataset[cnt, 17] = minp_v; dataset[cnt, 18] = vfondo_v
                     cnt += 1
                 pos = 0
 
         elif pos == 0:
             if signos_in[i] < 0 and extremo_in[i] <= (sat_inf_in[i] * armado_in) and acum_in[i] >= (extremo_in[i] * (1.0 - chasquido_in)):
                 pos = 1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1; tuvo_iter = False; t_gain = 0.0; t_loss = 0.0
+                cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
                 foto_X[0] = z_base_in[i]; foto_X[1] = in_v[i]; foto_X[2] = in_a[i]; foto_X[3] = math.sin(math.atan2(in_v[i], z_base_in[i]))
                 foto_X[4] = z_base_out[i]; foto_X[5] = out_v[i]; foto_X[6] = out_a[i]; foto_X[7] = math.sin(math.atan2(out_v[i], z_base_out[i]))
                 foto_X[8] = z_macro_1[i]; foto_X[9] = z_macro_2[i]
@@ -610,6 +627,8 @@ def extractor_ml_long(
         dataset[cnt, 0:10] = foto_X; dataset[cnt, 15] = float(idx_in - 1); dataset[cnt, 10] = prof_bruto - spread_pips
         dataset[cnt, 11] = min((min_v - p_in)*pips_mult, prof_bruto); dataset[cnt, 12] = max((max_v - p_in)*pips_mult, prof_bruto); dataset[cnt, 13] = float(max((n_velas - 1) - idx_in, 1))
         dataset[cnt, 14] = calcular_t_score_trade_numba(dataset[cnt, 12], dataset[cnt, 11], dataset[cnt, 10], t_gain, t_loss, spread_pips)
+        if v3_cols is not None:
+            dataset[cnt, 16] = 0.5 if dataset[cnt, 13] <= 2.0 else cg_v / cn_v; dataset[cnt, 17] = minp_v; dataset[cnt, 18] = vfondo_v
         cnt += 1
     return dataset[:cnt]
 
@@ -617,10 +636,11 @@ def extractor_ml_long(
 def extractor_ml_short(
     signos_in, extremo_in, sat_sup_in, acum_in, signos_out, extremo_out, sat_inf_out, acum_out,
     z_base_in, in_v, in_a, z_base_out, out_v, out_a, z_macro_1, z_macro_2,
-    opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas, armado_in, chasquido_in, armado_out, chasquido_out, spread_pips):
+    opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas, armado_in, chasquido_in, armado_out, chasquido_out, spread_pips, v3_cols=None):
     pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; tuvo_iter = False; t_gain = 0.0; t_loss = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
     max_trades = (n_velas // 2) + 5
-    dataset = np.empty((max_trades, 16), dtype=np.float32); cnt = 0; foto_X = np.zeros(10, dtype=np.float32)
+    dataset = np.empty((max_trades, (16 if v3_cols is None else 19)), dtype=np.float32); cnt = 0; foto_X = np.zeros(10, dtype=np.float32)
 
     for i in range(1, n_velas - 1):
         if pos == -1:
@@ -631,18 +651,27 @@ def extractor_ml_short(
                 else: t_loss += 1.0
             if highs_arr[i] > max_v: max_v = highs_arr[i]
             if lows_arr[i] < min_v: min_v = lows_arr[i]
+            if v3_cols is not None:   # [LAB-V8] estado vivo de Vida v3
+                v_v3 = max(float(i - idx_in + 1), 1.0); p_v3 = ((p_in - opens_arr[i+1]) * pips_mult) - spread_pips
+                if v_v3 >= 2.0:
+                    cn_v += 1.0
+                    if p_v3 > 0.0: cg_v += 1.0
+                if p_v3 < minp_v: minp_v = p_v3; vfondo_v = v_v3
             if signos_out[i] < 0 and extremo_out[i] <= (sat_inf_out[i] * armado_out) and acum_out[i] >= (extremo_out[i] * (1.0 - chasquido_out)):
                 p_out = opens_arr[i+1]; prof_bruto = (p_in - p_out) * pips_mult
                 if cnt < max_trades:
                     dataset[cnt, 0:10] = foto_X; dataset[cnt, 15] = float(idx_in - 1); dataset[cnt, 10] = prof_bruto - spread_pips
                     dataset[cnt, 11] = min((p_in - max_v)*pips_mult, prof_bruto); dataset[cnt, 12] = max((p_in - min_v)*pips_mult, prof_bruto); dataset[cnt, 13] = float(max((i + 1) - idx_in, 1))
                     dataset[cnt, 14] = calcular_t_score_trade_numba(dataset[cnt, 12], dataset[cnt, 11], dataset[cnt, 10], t_gain, t_loss, spread_pips)
+                    if v3_cols is not None:
+                        dataset[cnt, 16] = 0.5 if dataset[cnt, 13] <= 2.0 else cg_v / cn_v; dataset[cnt, 17] = minp_v; dataset[cnt, 18] = vfondo_v
                     cnt += 1
                 pos = 0
 
         elif pos == 0:
             if signos_in[i] > 0 and extremo_in[i] >= (sat_sup_in[i] * armado_in) and acum_in[i] <= (extremo_in[i] * (1.0 - chasquido_in)):
                 pos = -1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1; tuvo_iter = False; t_gain = 0.0; t_loss = 0.0
+                cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
                 foto_X[0] = z_base_in[i]; foto_X[1] = in_v[i]; foto_X[2] = in_a[i]; foto_X[3] = math.sin(math.atan2(in_v[i], z_base_in[i]))
                 foto_X[4] = z_base_out[i]; foto_X[5] = out_v[i]; foto_X[6] = out_a[i]; foto_X[7] = math.sin(math.atan2(out_v[i], z_base_out[i]))
                 foto_X[8] = z_macro_1[i]; foto_X[9] = z_macro_2[i]
@@ -652,6 +681,8 @@ def extractor_ml_short(
         dataset[cnt, 0:10] = foto_X; dataset[cnt, 15] = float(idx_in - 1); dataset[cnt, 10] = prof_bruto - spread_pips
         dataset[cnt, 11] = min((p_in - max_v)*pips_mult, prof_bruto); dataset[cnt, 12] = max((p_in - min_v)*pips_mult, prof_bruto); dataset[cnt, 13] = float(max((n_velas - 1) - idx_in, 1))
         dataset[cnt, 14] = calcular_t_score_trade_numba(dataset[cnt, 12], dataset[cnt, 11], dataset[cnt, 10], t_gain, t_loss, spread_pips)
+        if v3_cols is not None:
+            dataset[cnt, 16] = 0.5 if dataset[cnt, 13] <= 2.0 else cg_v / cn_v; dataset[cnt, 17] = minp_v; dataset[cnt, 18] = vfondo_v
         cnt += 1
     return dataset[:cnt]
 
@@ -664,7 +695,7 @@ def extractor_trayectoria_long_v2(
     z_base_in, in_v, in_a, z_base_out, out_v, out_a, z_macro_1, z_macro_2,
     opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
     armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
-    W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, W_T, B_T, T_min, escala_v):
+    W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, W_T, B_T, T_min, escala_v, v3p=None):
 
     max_snaps = n_velas + 5
     X_traj = np.empty((max_snaps, 10), dtype=np.float32)
@@ -678,6 +709,7 @@ def extractor_trayectoria_long_v2(
 
     cnt_snaps = 0; pos = 0; p_in = 0.0; min_v = 0.0; max_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
     t_gain = 0.0; t_loss = 0.0; trade_id = -1; trade_start_snap = 0; T_hat0 = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
     lim_T_seguro = (atrac_t * TOLERANCIA_VIDA_MEDIA) + 1e-9 if atrac_t > 0 else LIM_T_FALLBACK_VELAS
 
     for i in range(1, n_velas - 1):
@@ -693,6 +725,11 @@ def extractor_trayectoria_long_v2(
             velas_abiertas = max(float(i - idx_in + 1), 1.0)
             mae_previo = (min_v - p_in) * pips_mult; mfe_actual = (max_v - p_in) * pips_mult
             profit_apertura = ((opens_arr[i+1] - p_in) * pips_mult) - spread_pips
+            if v3p is not None:   # [LAB-V8] estado vivo de Vida v3
+                if velas_abiertas >= 2.0:
+                    cn_v += 1.0
+                    if profit_apertura > 0.0: cg_v += 1.0
+                if profit_apertura < minp_v: minp_v = profit_apertura; vfondo_v = velas_abiertas
             closed = False
 
             if atrac_t > 0 and velas_abiertas > lim_T_seguro:
@@ -727,6 +764,8 @@ def extractor_trayectoria_long_v2(
                 m_mae_snap = min(mae_previo, profit_apertura + spread_pips)
                 t_obs_snap = calcular_t_score_trade_numba(m_mfe_snap, m_mae_snap, profit_apertura, t_gain, t_loss, spread_pips)
                 dT = min(max(t_obs_snap - T_hat0, -1.0), 1.0)
+                if v3p is not None:   # [LAB-V8] ΔT con Vida v3 vivo (T_hat0 en escala V3 cuando NEXUS_LAB_T=V3)
+                    dT = min(max(v3_vivo_nb(profit_apertura, m_mfe_snap, m_mae_snap, velas_abiertas, cg_v, cn_v, minp_v, vfondo_v, spread_pips, v3p) - T_hat0, -1.0), 1.0)
                 X_traj[cnt_snaps, 8] = dT; X_traj[cnt_snaps, 9] = dT * Theta
                 Vela_snap[cnt_snaps] = int(velas_abiertas)
 
@@ -755,6 +794,7 @@ def extractor_trayectoria_long_v2(
                     pos = 1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
                     Z_pred = Z; v_req = ((Z * mad_v) + med_v) * RATIO_CAPTURA_VELOCIDAD * escala_v[i]; T_hat0 = min(max(T_raw, 0.0), 1.0)
                     t_gain = 0.0; t_loss = 0.0; trade_id += 1; trade_start_snap = cnt_snaps
+                    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
 
     if pos == 1 and cnt_snaps > trade_start_snap:
         idx_final = cnt_snaps - 1
@@ -774,7 +814,7 @@ def extractor_trayectoria_short_v2(
     z_base_in, in_v, in_a, z_base_out, out_v, out_a, z_macro_1, z_macro_2,
     opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
     armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
-    W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, W_T, B_T, T_min, escala_v):
+    W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, W_T, B_T, T_min, escala_v, v3p=None):
 
     max_snaps = n_velas + 5
     X_traj = np.empty((max_snaps, 10), dtype=np.float32)
@@ -788,6 +828,7 @@ def extractor_trayectoria_short_v2(
 
     cnt_snaps = 0; pos = 0; p_in = 0.0; min_v = 0.0; max_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
     t_gain = 0.0; t_loss = 0.0; trade_id = -1; trade_start_snap = 0; T_hat0 = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
     lim_T_seguro = (atrac_t * TOLERANCIA_VIDA_MEDIA) + 1e-9 if atrac_t > 0 else LIM_T_FALLBACK_VELAS
 
     for i in range(1, n_velas - 1):
@@ -803,6 +844,11 @@ def extractor_trayectoria_short_v2(
             velas_abiertas = max(float(i - idx_in + 1), 1.0)
             mae_previo = (p_in - max_v) * pips_mult; mfe_actual = (p_in - min_v) * pips_mult
             profit_apertura = ((p_in - opens_arr[i+1]) * pips_mult) - spread_pips
+            if v3p is not None:   # [LAB-V8] estado vivo de Vida v3
+                if velas_abiertas >= 2.0:
+                    cn_v += 1.0
+                    if profit_apertura > 0.0: cg_v += 1.0
+                if profit_apertura < minp_v: minp_v = profit_apertura; vfondo_v = velas_abiertas
             closed = False
 
             if atrac_t > 0 and velas_abiertas > lim_T_seguro:
@@ -837,6 +883,8 @@ def extractor_trayectoria_short_v2(
                 m_mae_snap = min(mae_previo, profit_apertura + spread_pips)
                 t_obs_snap = calcular_t_score_trade_numba(m_mfe_snap, m_mae_snap, profit_apertura, t_gain, t_loss, spread_pips)
                 dT = min(max(t_obs_snap - T_hat0, -1.0), 1.0)
+                if v3p is not None:   # [LAB-V8] ΔT con Vida v3 vivo (T_hat0 en escala V3 cuando NEXUS_LAB_T=V3)
+                    dT = min(max(v3_vivo_nb(profit_apertura, m_mfe_snap, m_mae_snap, velas_abiertas, cg_v, cn_v, minp_v, vfondo_v, spread_pips, v3p) - T_hat0, -1.0), 1.0)
                 X_traj[cnt_snaps, 8] = dT; X_traj[cnt_snaps, 9] = dT * Theta
                 Vela_snap[cnt_snaps] = int(velas_abiertas)
 
@@ -865,6 +913,7 @@ def extractor_trayectoria_short_v2(
                     pos = -1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
                     Z_pred = Z; v_req = ((Z * mad_v) + med_v) * RATIO_CAPTURA_VELOCIDAD * escala_v[i]; T_hat0 = min(max(T_raw, 0.0), 1.0)
                     t_gain = 0.0; t_loss = 0.0; trade_id += 1; trade_start_snap = cnt_snaps
+                    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
 
     if pos == -1 and cnt_snaps > trade_start_snap:
         idx_final = cnt_snaps - 1
@@ -888,11 +937,12 @@ def simular_motor_long_superv_T(
     opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
     armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
     activar_ml, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
-    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v):
+    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v, v3p=None):
 
     pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
     t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False; T_hat0 = 0.0
     mae_previo = 0.0; mfe_actual = 0.0; profit_apertura = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
 
     max_trades = (n_velas // 2) + 5
     mfe_A = np.empty(max_trades, dtype=np.float32); mae_A = np.empty(max_trades, dtype=np.float32)
@@ -914,6 +964,11 @@ def simular_motor_long_superv_T(
             velas_abiertas = max(float(i - idx_in + 1), 1.0)
             mae_previo = (min_v - p_in) * pips_mult; mfe_actual = (max_v - p_in) * pips_mult
             profit_apertura = ((opens_arr[i+1] - p_in) * pips_mult) - spread_pips
+            if v3p is not None:   # [LAB-V8] estado vivo de Vida v3
+                if velas_abiertas >= 2.0:
+                    cn_v += 1.0
+                    if profit_apertura > 0.0: cg_v += 1.0
+                if profit_apertura < minp_v: minp_v = profit_apertura; vfondo_v = velas_abiertas
             closed = False; m_mae = mae_previo
 
             if activar_ml:
@@ -942,6 +997,8 @@ def simular_motor_long_superv_T(
                 bruto_s = profit_apertura + spread_pips
                 t_obs = calcular_t_score_trade_numba(max(mfe_actual, bruto_s), min(mae_previo, bruto_s), profit_apertura, t_gain, t_loss, spread_pips)
                 dT = min(max(t_obs - T_hat0, -1.0), 1.0)
+                if v3p is not None:   # [LAB-V8] ΔT con Vida v3 vivo
+                    dT = min(max(v3_vivo_nb(profit_apertura, max(mfe_actual, bruto_s), min(mae_previo, bruto_s), velas_abiertas, cg_v, cn_v, minp_v, vfondo_v, spread_pips, v3p) - T_hat0, -1.0), 1.0)
                 T_pred = (W_S[0]*Fid + W_S[1]*D_ + W_S[2]*Theta + W_S[3]*C_ + W_S[4]*Z_pred_norm + W_S[5]*v_ef_norm + W_S[6]*inter_TD + W_S[7]*inter_FD + W_S[8]*dT + W_S[9]*(dT*Theta)) + B_S
 
                 if T_pred < K_abortar:
@@ -969,6 +1026,7 @@ def simular_motor_long_superv_T(
                 if autorizado:
                     pos = 1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
                     v_req = v_req_tmp * escala_v[i]; Z_pred = z_tmp; T_hat0 = min(max(t_raw, 0.0), 1.0); t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False
+                    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
 
     if pos == 1 and trade_tuvo_iteracion and cnt < max_trades:
         idx_final = n_velas - 1
@@ -989,11 +1047,12 @@ def simular_motor_short_superv_T(
     opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
     armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
     activar_ml, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
-    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v):
+    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v, v3p=None):
 
     pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
     t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False; T_hat0 = 0.0
     mae_previo = 0.0; mfe_actual = 0.0; profit_apertura = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
 
     max_trades = (n_velas // 2) + 5
     mfe_A = np.empty(max_trades, dtype=np.float32); mae_A = np.empty(max_trades, dtype=np.float32)
@@ -1015,6 +1074,11 @@ def simular_motor_short_superv_T(
             velas_abiertas = max(float(i - idx_in + 1), 1.0)
             mae_previo = (p_in - max_v) * pips_mult; mfe_actual = (p_in - min_v) * pips_mult
             profit_apertura = ((p_in - opens_arr[i+1]) * pips_mult) - spread_pips
+            if v3p is not None:   # [LAB-V8] estado vivo de Vida v3
+                if velas_abiertas >= 2.0:
+                    cn_v += 1.0
+                    if profit_apertura > 0.0: cg_v += 1.0
+                if profit_apertura < minp_v: minp_v = profit_apertura; vfondo_v = velas_abiertas
             closed = False; m_mae = mae_previo
 
             if activar_ml:
@@ -1043,6 +1107,8 @@ def simular_motor_short_superv_T(
                 bruto_s = profit_apertura + spread_pips
                 t_obs = calcular_t_score_trade_numba(max(mfe_actual, bruto_s), min(mae_previo, bruto_s), profit_apertura, t_gain, t_loss, spread_pips)
                 dT = min(max(t_obs - T_hat0, -1.0), 1.0)
+                if v3p is not None:   # [LAB-V8] ΔT con Vida v3 vivo
+                    dT = min(max(v3_vivo_nb(profit_apertura, max(mfe_actual, bruto_s), min(mae_previo, bruto_s), velas_abiertas, cg_v, cn_v, minp_v, vfondo_v, spread_pips, v3p) - T_hat0, -1.0), 1.0)
                 T_pred = (W_S[0]*Fid + W_S[1]*D_ + W_S[2]*Theta + W_S[3]*C_ + W_S[4]*Z_pred_norm + W_S[5]*v_ef_norm + W_S[6]*inter_TD + W_S[7]*inter_FD + W_S[8]*dT + W_S[9]*(dT*Theta)) + B_S
 
                 if T_pred < K_abortar:
@@ -1070,6 +1136,7 @@ def simular_motor_short_superv_T(
                 if autorizado:
                     pos = -1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
                     Z_pred = z_tmp; v_req = v_req_tmp * escala_v[i]; T_hat0 = min(max(t_raw, 0.0), 1.0); t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False
+                    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
 
     if pos == -1 and trade_tuvo_iteracion and cnt < max_trades:
         idx_final = n_velas - 1
@@ -1094,11 +1161,12 @@ def simular_motor_long_superv_T_ix(
     opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
     armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
     activar_ml, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
-    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v):
+    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v, v3p=None):
 
     pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
     t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False; T_hat0 = 0.0
     mae_previo = 0.0; mfe_actual = 0.0; profit_apertura = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
 
     max_trades = (n_velas // 2) + 5
     mfe_A = np.empty(max_trades, dtype=np.float32); mae_A = np.empty(max_trades, dtype=np.float32)
@@ -1121,6 +1189,11 @@ def simular_motor_long_superv_T_ix(
             velas_abiertas = max(float(i - idx_in + 1), 1.0)
             mae_previo = (min_v - p_in) * pips_mult; mfe_actual = (max_v - p_in) * pips_mult
             profit_apertura = ((opens_arr[i+1] - p_in) * pips_mult) - spread_pips
+            if v3p is not None:   # [LAB-V8] estado vivo de Vida v3
+                if velas_abiertas >= 2.0:
+                    cn_v += 1.0
+                    if profit_apertura > 0.0: cg_v += 1.0
+                if profit_apertura < minp_v: minp_v = profit_apertura; vfondo_v = velas_abiertas
             closed = False; m_mae = mae_previo
 
             if activar_ml:
@@ -1149,6 +1222,8 @@ def simular_motor_long_superv_T_ix(
                 bruto_s = profit_apertura + spread_pips
                 t_obs = calcular_t_score_trade_numba(max(mfe_actual, bruto_s), min(mae_previo, bruto_s), profit_apertura, t_gain, t_loss, spread_pips)
                 dT = min(max(t_obs - T_hat0, -1.0), 1.0)
+                if v3p is not None:   # [LAB-V8] ΔT con Vida v3 vivo
+                    dT = min(max(v3_vivo_nb(profit_apertura, max(mfe_actual, bruto_s), min(mae_previo, bruto_s), velas_abiertas, cg_v, cn_v, minp_v, vfondo_v, spread_pips, v3p) - T_hat0, -1.0), 1.0)
                 T_pred = (W_S[0]*Fid + W_S[1]*D_ + W_S[2]*Theta + W_S[3]*C_ + W_S[4]*Z_pred_norm + W_S[5]*v_ef_norm + W_S[6]*inter_TD + W_S[7]*inter_FD + W_S[8]*dT + W_S[9]*(dT*Theta)) + B_S
 
                 if T_pred < K_abortar:
@@ -1176,6 +1251,7 @@ def simular_motor_long_superv_T_ix(
                 if autorizado:
                     pos = 1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
                     v_req = v_req_tmp * escala_v[i]; Z_pred = z_tmp; T_hat0 = min(max(t_raw, 0.0), 1.0); t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False
+                    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
 
     if pos == 1 and trade_tuvo_iteracion and cnt < max_trades:
         idx_final = n_velas - 1
@@ -1197,11 +1273,12 @@ def simular_motor_short_superv_T_ix(
     opens_arr, highs_arr, lows_arr, phantom_arr, pips_mult, n_velas,
     armado_in, chasquido_in, armado_out, chasquido_out, spread_pips,
     activar_ml, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
-    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v):
+    activar_superv, W_S, B_S, K_abortar, W_T, B_T, T_min, escala_v, v3p=None):
 
     pos = 0; p_in = 0.0; max_v = 0.0; min_v = 0.0; idx_in = 0; v_req = 0.0; Z_pred = 0.0
     t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False; T_hat0 = 0.0
     mae_previo = 0.0; mfe_actual = 0.0; profit_apertura = 0.0
+    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0   # [LAB-V8] estado vivo de Vida v3
 
     max_trades = (n_velas // 2) + 5
     mfe_A = np.empty(max_trades, dtype=np.float32); mae_A = np.empty(max_trades, dtype=np.float32)
@@ -1224,6 +1301,11 @@ def simular_motor_short_superv_T_ix(
             velas_abiertas = max(float(i - idx_in + 1), 1.0)
             mae_previo = (p_in - max_v) * pips_mult; mfe_actual = (p_in - min_v) * pips_mult
             profit_apertura = ((p_in - opens_arr[i+1]) * pips_mult) - spread_pips
+            if v3p is not None:   # [LAB-V8] estado vivo de Vida v3
+                if velas_abiertas >= 2.0:
+                    cn_v += 1.0
+                    if profit_apertura > 0.0: cg_v += 1.0
+                if profit_apertura < minp_v: minp_v = profit_apertura; vfondo_v = velas_abiertas
             closed = False; m_mae = mae_previo
 
             if activar_ml:
@@ -1252,6 +1334,8 @@ def simular_motor_short_superv_T_ix(
                 bruto_s = profit_apertura + spread_pips
                 t_obs = calcular_t_score_trade_numba(max(mfe_actual, bruto_s), min(mae_previo, bruto_s), profit_apertura, t_gain, t_loss, spread_pips)
                 dT = min(max(t_obs - T_hat0, -1.0), 1.0)
+                if v3p is not None:   # [LAB-V8] ΔT con Vida v3 vivo
+                    dT = min(max(v3_vivo_nb(profit_apertura, max(mfe_actual, bruto_s), min(mae_previo, bruto_s), velas_abiertas, cg_v, cn_v, minp_v, vfondo_v, spread_pips, v3p) - T_hat0, -1.0), 1.0)
                 T_pred = (W_S[0]*Fid + W_S[1]*D_ + W_S[2]*Theta + W_S[3]*C_ + W_S[4]*Z_pred_norm + W_S[5]*v_ef_norm + W_S[6]*inter_TD + W_S[7]*inter_FD + W_S[8]*dT + W_S[9]*(dT*Theta)) + B_S
 
                 if T_pred < K_abortar:
@@ -1279,6 +1363,7 @@ def simular_motor_short_superv_T_ix(
                 if autorizado:
                     pos = -1; p_in = opens_arr[i+1]; max_v = p_in; min_v = p_in; idx_in = i + 1
                     Z_pred = z_tmp; v_req = v_req_tmp * escala_v[i]; T_hat0 = min(max(t_raw, 0.0), 1.0); t_gain = 0.0; t_loss = 0.0; trade_tuvo_iteracion = False
+                    cg_v = 0.0; cn_v = 0.0; minp_v = 1e30; vfondo_v = 0.0
 
     if pos == -1 and trade_tuvo_iteracion and cnt < max_trades:
         idx_final = n_velas - 1
@@ -1455,7 +1540,7 @@ def _bloque_mql5(c, export_idx, dir_nombre, cfg, ml, sv, emoji, umbral):
       {cabeza_b_mql}{tam_mql}
       // 🧠 MOTOR DE SUPERVIVENCIA CONTINUA (superv_toro/oso — compatible EA V12.01+).
       g_pares[idx].{sv}.b_superv = {bS:.{DEC_W}f}; g_pares[idx].{sv}.k_abortar = {kA:.5f}; {superv_cfg}
-      {w_sv}{suffix}"""
+      {w_sv}{lab_bloque_vida(sv, c.get('V3P'))}{suffix}"""
 
 def _fila_reporte(simbolo, dir_nombre, idx, c, st):
     r = c['row']
@@ -1486,7 +1571,8 @@ def _fila_reporte(simbolo, dir_nombre, idx, c, st):
         'MedProfitPips_OOS_Superv': round(c['MedProfitPips_Superv'], 1),
         'N_Cand_OOS_Evaluados': st['n_eval'], 'N_Cand_Compuerta_OK': st['n_ok'],
         'Mediana_ScoreOOS_Todos': round(st['med_score_oos'], 2),
-        **({} if LAB_CIERRE != 'V3' else {**{f'R2V_{n}': (round(v, 4) if v == v else 'NA') for n, v in zip(VV.DESCRIPTORES + ('V3',), c['VIDA'].get('r2', [float('nan')] * 6))}, 'Corr_max_desc': (round(c['VIDA'].get('corr_max', float('nan')), 3) if c['VIDA'] else 'NA')})
+        **({} if not LAB_USA_VIDA else {'Vida_ver': LAB_VIDA, 'T_modo': LAB_T, 'V3_rit_vmin': (round(float(c['V3P'][1]), 4) if c.get('V3P') is not None else 'NA')}),   # [LAB-V8]
+        **({} if LAB_CIERRE not in ('V3', 'dV3') else {**{f'R2V_{n}': (round(v, 4) if v == v else 'NA') for n, v in zip(VV.DESCRIPTORES + ('V3',), c['VIDA'].get('r2', [float('nan')] * 6))}, 'Corr_max_desc': (round(c['VIDA'].get('corr_max', float('nan')), 3) if c['VIDA'] else 'NA')})
     }
 
 def _escritura_atomica(ruta, contenido_o_df, es_df=False):
@@ -1570,6 +1656,15 @@ def lab_escala_v(modo, nulo, rng, N_velas, ini_tr, fin_tr, ini_te, fin_te, df_ml
     return esc_total
 
 
+def lab_bloque_vida(sv, v3p):
+    """[LAB-V8] Constantes de Vida v3 del cerebro (solo con NEXUS_LAB_T=V3). Vacío si v3p es None: el bloque exportado queda idéntico al de lab-v7."""
+    if v3p is None: return ""
+    t = f"\n      g_pares[idx].{sv}.vida_activa = true; g_pares[idx].{sv}.vida_h = {v3p[0]:.{DEC_W}f}; g_pares[idx].{sv}.vida_rit_vmin = {v3p[1]:.{DEC_W}f}; g_pares[idx].{sv}.vida_rec_na = {v3p[2]:.{DEC_W}f};"
+    for nombre, a in (('vida_med', 3), ('vida_esc', 8), ('vida_peso', 13)):
+        t += "\n      " + " ".join(f"g_pares[idx].{sv}.{nombre}[{k}]={v3p[a + k]:.{DEC_W}f};" for k in range(5))
+    return t
+
+
 def lab_bloque_tam(ml, tam):
     """Texto C++ con los parámetros del Ridge de tamaño para el EA gemelo. Vacío si no hay modo de tamaño (texto idéntico a main)."""
     if not tam or tam.get('modo', 'off') == 'off':
@@ -1623,14 +1718,15 @@ def lab_escanear_k_v7(sim_ix, grid, dircode, O, H, L, pm, c, min_trades, seed):
     return mejor_k, mejor_r, mejor_ex
 
 
-def lab_target_cierre(modo, y_target, tsc_snap, prof_snap, tid_snap, mfe_snap=None, mae_snap=None, vela_snap=None, spread=None, h=None, vida_out=None):
+def lab_target_cierre(modo, y_target, tsc_snap, prof_snap, tid_snap, mfe_snap=None, mae_snap=None, vela_snap=None, spread=None, h=None, vida_out=None, v3p=None):
     """Target de Ridge 2 por foto. T_terminal => sin cambio. dT_cont = T_terminal - T_obs(t). G_pips = pips finales del trade - profit_apertura(t).
     V3 = Vida v3 terminal del trade (vida_v3.py); si se pasa `vida_out` (dict) se llena con el resultado completo (descriptores) para el reporte."""
     if len(tid_snap) == 0 or modo == 'T_terminal':
         return y_target
-    if modo == 'V3':
-        v = VV.vida_v3(prof_snap, mfe_snap, mae_snap, tid_snap, vela_snap, float(spread), float(h))
+    if modo in ('V3', 'dV3'):
+        v = VV.vida_v31(prof_snap, mfe_snap, mae_snap, tid_snap, vela_snap, float(spread), float(h), ver=LAB_VIDA, v3p=v3p)   # [LAB-V8]
         if vida_out is not None: vida_out.update(v)
+        if modo == 'dV3': return (v['V3_term'].astype(np.float64) - v['V3']).astype(np.float32)   # H-V3-01: V3 terminal - V3 vivo(t)
         return v['V3_term']
     if modo == 'dT_cont':
         return (y_target - tsc_snap).astype(np.float32)
@@ -1800,8 +1896,20 @@ def procesar_simbolo(SIMBOLO):
                 phantom_train = phantom_arr[start_train:end_train]
                 phantom_test = phantom_arr[start_test:end_test]
 
-                mat_train = extract_r_func(*S(start_train, end_train), phantom_train, PIPS_MULT, TRAIN_LEN, arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO)
-                df_ml = pd.DataFrame(mat_train, columns=COLS_X_ENTRADA + ['Profit_Pips', 'MAE_Pips', 'MFE_Pips', 'Velas_Vida', 'T_Terminal', 'Idx_Decision'])
+                mat_train = extract_r_func(*S(start_train, end_train), phantom_train, PIPS_MULT, TRAIN_LEN, arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO, *((True,) if LAB_T == 'V3' else ()))   # [LAB-V8] +3 columnas de Vida con NEXUS_LAB_T=V3
+                df_ml = pd.DataFrame(mat_train, columns=COLS_X_ENTRADA + ['Profit_Pips', 'MAE_Pips', 'MFE_Pips', 'Velas_Vida', 'T_Terminal', 'Idx_Decision'] + (['V3_FET', 'V3_PFONDO', 'V3_VFONDO'] if LAB_T == 'V3' else []))
+                # [LAB-V8] Vida v3 extendida: constantes de la población IS (operaciones del extractor de entrada); la Cabeza B aprende V3 terminal
+                V3P = None; H_VIDA = None
+                if LAB_USA_VIDA:
+                    try: H_VIDA = V7.escala_h(opens_arr[start_train:end_train], float(PIPS_MULT))   # h solo del IS (Close ≈ Open)
+                    except ValueError as e_h: return desc(str(e_h))
+                if LAB_T == 'V3':
+                    V3P, _raw_pob, _apl_pob = VV.v3p_poblacion(df_ml['Profit_Pips'].values, df_ml['MFE_Pips'].values, df_ml['MAE_Pips'].values, df_ml['Velas_Vida'].values,
+                                                                df_ml['V3_FET'].values, df_ml['V3_PFONDO'].values, df_ml['V3_VFONDO'].values, SPREAD_ACTIVO, H_VIDA, LAB_VIDA)
+                    V3P = np.array([float(f"{v:.{DEC_W}f}") for v in V3P])   # precisión de export: el laboratorio usa lo mismo que leerán 4.5 y el EA
+                    if not np.isfinite(V3P).all(): return desc("Vida_constantes_no_finitas")
+                    df_ml['T_Terminal'] = VV.v3_terminal_poblacion(_raw_pob, _apl_pob, V3P)
+
                 W_R, B_R, med_v, mad_v, atrac_t, msg = entrenar_modelo_ridge(df_ml)
                 if W_R is None: return desc(f"Ridge_entrada:{msg}")
                 if atrac_t <= 0 or mad_v <= 0: return desc("Parametros_Ridge_invalidos")
@@ -1826,10 +1934,10 @@ def procesar_simbolo(SIMBOLO):
                 except ValueError as e_lab:
                     return desc(str(e_lab))
 
-                def run_sim(a, b, phantom, activar_superv, W_S, B_S, K, _f=None):
+                def run_sim(a, b, phantom, activar_superv, W_S, B_S, K, _f=None):   # [LAB-V8] v3p al final solo con NEXUS_LAB_T=V3
                     return (_f or sim_superv_func)(*S(a, b), phantom, PIPS_MULT, b - a, arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO,
                                            True, W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia,
-                                           activar_superv, W_S, B_S, K, W_T, B_T, T_min, ESC[a:b])
+                                           activar_superv, W_S, B_S, K, W_T, B_T, T_min, ESC[a:b], *((V3P,) if V3P is not None else ()))
 
                 # [LAB-V7 V0.4] evaluador según NEXUS_LAB_METRICA (final = exactamente lo de main)
                 dir_code_lab = 1 if direccion_nombre == 'LONG' else -1
@@ -1853,16 +1961,12 @@ def procesar_simbolo(SIMBOLO):
                 x_traj, y_target, prof_snap, mae_snap, mfe_snap, tsc_snap, tid_snap, vela_snap = ext_traj_func(
                     *S(start_train, end_train), phantom_train, PIPS_MULT, TRAIN_LEN,
                     arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO,
-                    W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, W_T, B_T, T_min, ESC[start_train:end_train]
+                    W_R, B_R, med_v, mad_v, atrac_t, umbral_z_ia, W_T, B_T, T_min, ESC[start_train:end_train], *((V3P,) if V3P is not None else ())
                 )
                 _VIDA = {}
-                H_VIDA = None
-                if LAB_CIERRE == 'V3':
-                    try: H_VIDA = V7.escala_h(opens_arr[start_train:end_train], float(PIPS_MULT))   # [LAB-V7 V0.5] h solo del IS (Close ≈ Open)
-                    except ValueError as e_h: return desc(str(e_h))
-                y_target = lab_target_cierre(LAB_CIERRE, y_target, tsc_snap, prof_snap, tid_snap, mfe_snap, mae_snap, vela_snap, SPREAD_ACTIVO, H_VIDA, _VIDA)   # [LAB-V7] (T_terminal = main)
+                y_target = lab_target_cierre(LAB_CIERRE, y_target, tsc_snap, prof_snap, tid_snap, mfe_snap, mae_snap, vela_snap, SPREAD_ACTIVO, H_VIDA, _VIDA, V3P)   # [LAB-V7/V8] (T_terminal = main)
                 _m = vela_snap > INMUNIDAD_VELAS_EFECTIVA
-                if LAB_CIERRE == 'V3' and _VIDA and _m.sum() > 50:
+                if LAB_CIERRE in ('V3', 'dV3') and _VIDA and _m.sum() > 50:
                     _Y6 = np.column_stack([_VIDA['S_term'][_m], _VIDA['V3_term'][_m].astype(np.float64)])
                     _r2 = VV.r2_agrupado(x_traj[_m][:, :N_FEAT_SUPERV], _Y6, tid_snap[_m])
                     _ult, _ = VV._ultimas_fotos(tid_snap)
@@ -1909,7 +2013,7 @@ def procesar_simbolo(SIMBOLO):
 
                 if score_flujo > 0 and trades_superv >= MIN_OPS_OOS_EXPORT:
                     return {
-                        'row': row, 'TAM': PAR_TAM, 'VIDA': PAR_VIDA, 'W_R': W_R, 'B_R': B_R, 'med_v': med_v, 'mad_v': mad_v, 'atrac_t': atrac_t,
+                        'row': row, 'TAM': PAR_TAM, 'VIDA': PAR_VIDA, 'V3P': V3P, 'W_R': W_R, 'B_R': B_R, 'med_v': med_v, 'mad_v': mad_v, 'atrac_t': atrac_t,
                         'W_S': W_S, 'B_S': B_S, 'K_opt': K_opt, 'ScoreK_IS': score_k_is,
                         'ClaveRank': clave_rank,
                         'ScoreFlujo': score_flujo, 'Retencion': retencion * 100, 'Retencion_Raw': retencion_raw * 100,

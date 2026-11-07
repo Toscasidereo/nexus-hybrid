@@ -214,7 +214,17 @@ def main():
             args = (dcode, 0, *S9, ph9, PM, n9, 0.5, 0.1, 0.5, 0.1, 1.2, WR9, 0.0, 0.5, 0.1, 10.0, 0.0, 0.60, 1.5,
                     sup, WS9, 0.0, 0.3, 2, 10, True, WT9, 0.0, -1.0)
             a9 = M45.simular_motor(*args); b9 = L45.simular_motor(*args, np.ones(n9))
-            l9[f'{lado}_superv{int(sup)}_igual_main'] = bool(len(a9[0]) > 10 and all(np.array_equal(x, y, equal_nan=True) for x, y in zip(a9, b9)))
+            if not sup:
+                l9[f'{lado}_superv0_igual_main'] = bool(len(a9[0]) > 10 and all(np.array_equal(x, y, equal_nan=True) for x, y in zip(a9, b9)))
+            else:
+                # [LAB-V8 H-EA-ULP] la suma de t_pred es secuencial en el lab (alineada con Fase 4 y el EA): difiere de main <= 1 ULP.
+                # Exigencia: mismo numero de operaciones, mismas decisiones (arrays enteros iguales) y flotantes dentro de 1e-9 relativo.
+                ok = len(a9[0]) > 10 and len(a9[0]) == len(b9[0]) and len(a9) == len(b9)
+                for x, y in zip(a9, b9):
+                    if not ok: break
+                    if np.issubdtype(np.asarray(x).dtype, np.integer): ok = ok and np.array_equal(x, y)
+                    else: ok = ok and np.allclose(x, y, rtol=1e-9, atol=1e-12, equal_nan=True)
+                l9[f'{lado}_superv1_igual_main_tol1ulp'] = bool(ok)
         c9 = L45.simular_motor(*args, np.full(n9, 3.0))
         l9[f'{lado}_escala_se_usa'] = bool(len(c9[0]) != len(a9[0]) or not np.array_equal(c9[0], a9[0], equal_nan=True))
     out['L9_kernel_45_lab'] = {'detalle': l9, 'pasa': all(l9.values())}

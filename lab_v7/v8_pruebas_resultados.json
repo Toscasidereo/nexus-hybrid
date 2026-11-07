@@ -1,0 +1,64 @@
+{
+ "N1_defecto_sin_cambios": {
+  "detalle": {
+   "long_traj_sin_v3p_igual_a_antes": true,
+   "short_traj_sin_v3p_igual_a_antes": true
+  },
+  "pasa": true,
+  "demuestra": "la trayectoria sin v3p produce datos; la identidad bit a bit con main está en lab_pruebas L1",
+  "no_demuestra": "nada sobre datos reales"
+ },
+ "N3_V3_vivo_nucleo_vs_python": {
+  "detalle": {
+   "long_cols_0_7_intactas": true,
+   "long_dT_V3_nucleo_vs_python_max": 5.92199138324534e-07,
+   "long_dT_V3_nucleo_vs_python_ok": true,
+   "short_cols_0_7_intactas": true,
+   "short_dT_V3_nucleo_vs_python_max": 2.509016305551892e-07,
+   "short_dT_V3_nucleo_vs_python_ok": true
+  },
+  "pasa": true,
+  "demuestra": "el ΔT con V3 vivo del extractor coincide con vida_v31 sobre las fotos guardadas (tolerancia por float32)",
+  "no_demuestra": "paridad con el EA (ver lab_compat_ea)"
+ },
+ "N4_causalidad": {
+  "detalle": {
+   "long_prefijo_igual": true,
+   "short_prefijo_igual": true
+  },
+  "pasa": true,
+  "demuestra": "V3 vivo no usa fotos posteriores",
+  "no_demuestra": "causalidad del resto del pipeline (cubierta por las pruebas de main)"
+ },
+ "N5_poblacion_IS": {
+  "detalle": {
+   "long_columnas_19": true,
+   "long_valores_validos": true,
+   "long_v3p_finito": true,
+   "long_V3_terminal_en_0_1": true,
+   "short_columnas_19": true,
+   "short_valores_validos": true,
+   "short_v3p_finito": true,
+   "short_V3_terminal_en_0_1": true
+  },
+  "pasa": true,
+  "demuestra": "columnas extra consistentes y constantes finitas",
+  "no_demuestra": "ausencia de fuga si se pasan datos OOS (la ventana IS la fija Fase 4)"
+ },
+ "NX_simuladores_con_v3p": {
+  "detalle": {
+   "long_sim_corre_con_v3p": true,
+   "long_ix_misma_salida_que_sim": true,
+   "long_ix_sin_v3p_igual_sim": true,
+   "long_v3p_cambia_decisiones_cuando_solo_pesa_dT": true,
+   "short_sim_corre_con_v3p": true,
+   "short_ix_misma_salida_que_sim": true,
+   "short_ix_sin_v3p_igual_sim": true,
+   "short_v3p_cambia_decisiones_cuando_solo_pesa_dT": true
+  },
+  "pasa": true,
+  "demuestra": "los simuladores corren con v3p, _ix == original, y el ΔT con V3 realmente cambia las decisiones",
+  "no_demuestra": "que V3 sea mejor que T(t)"
+ },
+ "todas_pasan": true
+}

@@ -56,15 +56,20 @@ ESCALON = 'E3'                             # Debe coincidir con la Etapa A ejecu
 LAB_TAMANO = os.environ.get('NEXUS_LAB_TAMANO', 'off')           # 'off' | 'A' | 'B'
 LAB_CIERRE = os.environ.get('NEXUS_LAB_CIERRE', 'T_terminal')    # 'T_terminal' | 'dT_cont' | 'G_pips' | 'V3'
 LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
+LAB_T = os.environ.get('NEXUS_LAB_T', 'T')            # [LAB-V8] 'T' | 'V3' (solo cambia el tag en B; en A también activa Vida si el cerebro la trae)
+LAB_VIDA = os.environ.get('NEXUS_LAB_VIDA', '3.0')    # [LAB-V8] '3.0' | '3.1'
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' | 'v7' (solo cambia el tag: 4.5 no usa Score_v7)
 LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
 assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
 assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
-assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
+assert LAB_T in ('T', 'V3'), f"NEXUS_LAB_T invalido: {LAB_T}"
+assert LAB_VIDA in ('3.0', '3.1'), f"NEXUS_LAB_VIDA invalido: {LAB_VIDA}"
+LAB_USA_VIDA = (LAB_T == 'V3') or (LAB_CIERRE in ('V3', 'dV3'))
 assert not (LAB_NULO and LAB_TAMANO != 'off'), "Gemelo nulo con Ridge de tamaño no es exportable: la escala desplazada no sale en el .txt"
-LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main')
-_SUF_LAB = (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_NULO" if LAB_NULO else "")) if LAB_ACTIVO else ""
+LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main') or (LAB_T != 'T') or (LAB_VIDA != '3.0')
+_SUF_LAB = (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_TV3" if LAB_T == "V3" else "") + ("_VID31" if (LAB_VIDA == "3.1" and LAB_USA_VIDA) else "") + ("_NULO" if LAB_NULO else "")) if LAB_ACTIVO else ""
 DIR_SALIDA = f"F45_V12_{ESCALON}" + _SUF_LAB
 DIR_GRAF = os.path.join(DIR_SALIDA, "graficos")
 

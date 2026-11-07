@@ -79,10 +79,10 @@
  "L9_kernel_45_lab": {
   "detalle": {
    "long_superv0_igual_main": true,
-   "long_superv1_igual_main": true,
+   "long_superv1_igual_main_tol1ulp": true,
    "long_escala_se_usa": true,
    "short_superv0_igual_main": true,
-   "short_superv1_igual_main": true,
+   "short_superv1_igual_main_tol1ulp": true,
    "short_escala_se_usa": true
   },
   "pasa": true
