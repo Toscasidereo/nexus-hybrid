@@ -34,7 +34,7 @@ cfg = {}
 for l in open(os.path.join(AQUI, 'tablero_lab.env'), encoding='utf-8'):
     l = l.strip()
     if l and not l.startswith('#') and '=' in l: k, _, val = l.partition('='); cfg[k] = val.strip()
-perm = {'NEXUS_LAB_METRICA': ('final', 'v7'), 'NEXUS_LAB_F3': ('main', 'v7'), 'NEXUS_LAB_CIERRE': ('T_terminal', 'dT_cont', 'G_pips', 'V3'),
+perm = {'NEXUS_LAB_METRICA': ('final', 'v7'), 'NEXUS_LAB_F3': ('main', 'v7'), 'NEXUS_LAB_CIERRE': ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), 'NEXUS_LAB_T': ('T', 'V3'), 'NEXUS_LAB_VIDA': ('3.0', '3.1'),
         'NEXUS_LAB_TAMANO': ('off', 'A', 'B'), 'NEXUS_LAB_NULO': ('0', '1')}
 for k, p in perm.items(): (ok if cfg.get(k) in p else no)(f'{k}={cfg.get(k)!r} (permitidos {p})')
 for k in ('NEXUS_LAB_SIMBOLOS', 'NEXUS_LAB_N_SIM', 'NEXUS_LAB_STARTUP', 'NEXUS_LAB_F3_MEDIR'): ok(f'{k}={cfg.get(k)!r}')

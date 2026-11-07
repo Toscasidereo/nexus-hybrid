@@ -76,5 +76,25 @@
   },
   "informativo": true
  },
+ "C6_Vida_v3_vivo_EA_compilada_vs_numba": {
+  "detalle": {
+   "funcion_presente_en_EA": true,
+   "L_compila": true,
+   "L_texto_trae_5_med_5_esc_5_peso": true,
+   "L_V3_vivo_EA_igual_numba_bit_a_bit": true,
+   "L_filas_distintas": 0,
+   "L_max_abs": 0.0,
+   "L_bloque_activa_vida": true,
+   "S_compila": true,
+   "S_texto_trae_5_med_5_esc_5_peso": true,
+   "S_V3_vivo_EA_igual_numba_bit_a_bit": true,
+   "S_filas_distintas": 0,
+   "S_max_abs": 0.0,
+   "S_bloque_activa_vida": true,
+   "L_sin_V3P_no_hay_bloque_vida": true,
+   "S_sin_V3P_no_hay_bloque_vida": true
+  },
+  "pasa": true
+ },
  "todas_pasan": true
 }

@@ -43,6 +43,8 @@
 #         son las de una lista cerrada (el resto del original aparece completo y en el mismo orden).
 #   Uso: python lab_v7/lab_pruebas.py  -> escribe lab_v7/lab_pruebas_resultados.json
 # ==============================================================================
+#   V0.9 (2026-11-07, lab-v8): L9 con supervisión compara con main bit a bit en enteros (decisiones) y con tolerancia 1e-9 relativo en floats: la suma de t_pred es
+#       secuencial en el lab (H-EA-ULP, ≤1 ULP). Sin supervisión sigue bit a bit. L11 añade etiquetas _TV3/_VID31. L17: ida y vuelta lab_bloque_vida -> parse_vida.
 import os, sys, json, subprocess
 import numpy as np
 import pandas as pd
@@ -254,6 +256,8 @@ def main():
                         ('f3_v7', {'NEXUS_LAB_F3': 'v7'}),
                         ('cadena_v7', {'NEXUS_LAB_METRICA': 'v7', 'NEXUS_LAB_F3': 'v7'}),
                         ('vida_v3', {'NEXUS_LAB_CIERRE': 'V3'}),
+                        ('t_v3_vid31', {'NEXUS_LAB_T': 'V3', 'NEXUS_LAB_VIDA': '3.1', 'NEXUS_LAB_CIERRE': 'V3'}),
+                        ('cadena_v8', {'NEXUS_LAB_METRICA': 'v7', 'NEXUS_LAB_F3': 'v7', 'NEXUS_LAB_CIERRE': 'V3', 'NEXUS_LAB_TAMANO': 'A', 'NEXUS_LAB_T': 'V3', 'NEXUS_LAB_VIDA': '3.1'}),
                         ('cadena_v7_vida', {'NEXUS_LAB_METRICA': 'v7', 'NEXUS_LAB_F3': 'v7', 'NEXUS_LAB_CIERRE': 'V3', 'NEXUS_LAB_TAMANO': 'A'})):
         c4, t4 = val('Fase_4_lab', 'X.TAG_ARCHIVOS', env)
         cA, tA = val('Fase_4_5_lab_A', 'X.TAG_ARCHIVOS_FASE4', env)
@@ -391,6 +395,19 @@ def main():
     l16 = {'solo_lineas_permitidas_modificadas': not no_perm, 'cantidad_modificadas': len(quitadas), 'no_permitidas': no_perm[:5]}
     out['L16_Fase3_lab_defecto_igual_main'] = {'detalle': l16, 'pasa': bool(l16['solo_lineas_permitidas_modificadas'] and len(quitadas) <= len(permitidas))}
 
+
+    # L17 [LAB-V8] ida y vuelta del bloque vida_*: lab_bloque_vida (Fase 4) -> parse_vida (4.5) exacto; sin V3P no hay bloque; el tag distingue T y VIDA
+    l17 = {}
+    rng17 = np.random.default_rng(17)
+    v3p17 = np.array([30.0, 3.0, 1.0] + list(rng17.uniform(0.3, 0.7, 5)) + list(rng17.uniform(0.2, 1.5, 5)) + [0.2] * 5)
+    v3r17 = np.array([float(f"{x:.{L.DEC_W}f}") for x in v3p17])
+    for sv17 in ('superv_toro', 'superv_oso'):
+        txt17 = L.lab_bloque_vida(sv17, v3r17)
+        pv = L45.parse_vida(txt17, sv17)
+        l17[f'{sv17}_ida_y_vuelta_exacta'] = bool(pv is not None and np.array_equal(pv, v3r17))
+        l17[f'{sv17}_sin_V3P_vacio_y_parse_None'] = bool(L.lab_bloque_vida(sv17, None) == '' and L45.parse_vida('', sv17) is None)
+    l17['lado_cruzado_no_se_lee'] = bool(L45.parse_vida(L.lab_bloque_vida('superv_toro', v3r17), 'superv_oso') is None)
+    out['L17_bloque_vida_ida_y_vuelta'] = {'detalle': l17, 'pasa': all(l17.values())}
     out['todas_pasan'] = all(v['pasa'] for k, v in out.items() if isinstance(v, dict) and 'pasa' in v)
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:
         json.dump(out, fh, indent=1, ensure_ascii=False)

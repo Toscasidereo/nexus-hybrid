@@ -27,6 +27,13 @@
 //      La asociación distinta daba 1 ULP (2.2e-16) de diferencia en ~20% de las evaluaciones (prueba lab_compat_ea.py C4). Ahora se suma en dos pasos
 //      secuenciales (toro y oso). Solo en este EA gemelo; EA_V12.01.txt (main) NO se modifica.
 //    - `lab_v7/lab_compat_ea.py` compila con g++ el texto REAL de este archivo y lo compara bit a bit con Python (C1..C5).
+// 📋 BITÁCORA LAB-V8 EA GEMELO V3 (2026-11-07) — Orden del CRO: "extender v3 ... luz verde" (rama lab-v8).
+//    - `CerebroSuperv` incorpora `vida_activa`, `vida_h`, `vida_rit_vmin`, `vida_rec_na`, `vida_med[5]`, `vida_esc[5]`, `vida_peso[5]`. Apagado por defecto
+//      (`vida_activa=false`): el EA se comporta como el gemelo de lab-v7 (ΔT con T(t)).
+//    - `CalcularVida3Vivo` replica `v3_raw_nb` + `v3_comp_nb` (vida_v3.py). Con `vida_activa` y `n_features==10`, ΔT = clip(V3_vivo - T_hat0, -1, 1).
+//    - Estado vivo por posición (`v3_cg_*`, `v3_cn_*`, `v3_minp_*`, `v3_vf_*`): se actualiza cada vela cerrada y se reconstruye desde el histórico al reiniciar.
+//      [PENDIENTE / NO VERIFICABLE] La reconstrucción usa `spread_asumido_ia` (igual que t_gain/t_loss), no el costo dinámico de cada vela pasada.
+//    - Estado: [PENDIENTE / NO VERIFICABLE] compilación en MetaEditor; paridad bit a bit de tanh (libm vs MQL5) no demostrable con g++.
 // ==============================================================================
 // ==============================================================================
 // 📋 BITÁCORA V12.02 (Auditoría M7 — paridad MQL5↔Python, parche H-EA-MAD-01 y H-EA-TG-01):
@@ -166,6 +173,7 @@ struct CerebroML {
 struct CerebroSuperv { 
    double b_superv; double k_abortar; double w_superv[10];
    int inmunidad_velas; int n_features;
+   bool vida_activa; double vida_h; double vida_rit_vmin; double vida_rec_na; double vida_med[5]; double vida_esc[5]; double vida_peso[5]; // LAB-V8: Vida v3 vivo (apagado = T(t) de lab-v7)
 };
 
 struct ConfigMotor {
@@ -190,6 +198,8 @@ struct DatosPar {
    double p_in_toro; double max_toro; double min_toro; double v_req_toro; double z_pred_toro; double t_hat0_toro; datetime time_in_toro; 
    double p_in_oso;  double max_oso;  double min_oso;  double v_req_oso;  double z_pred_oso;  double t_hat0_oso;  datetime time_in_oso;
    int t_gain_toro; int t_loss_toro;
+   double v3_cg_toro; double v3_cn_toro; double v3_minp_toro; double v3_vf_toro; // LAB-V8: estado vivo de Vida v3
+   double v3_cg_oso;  double v3_cn_oso;  double v3_minp_oso;  double v3_vf_oso;
    int t_gain_oso;  int t_loss_oso;
 
    ConfigPar cfg; HistFPP fpp; 
@@ -267,6 +277,29 @@ double CalcularTScoreTrade(double mfe_trade, double mae_trade, double prof_neta_
    double mae_piso = MathMax(MathAbs(mae_trade), spread_pips);
    double ivr_crudo = (prof_neta_trade - mae_trade) / (MathMax(t_loss, 1.0) * mae_piso + 1e-9);
    return (fee * fet * ((MathTanh(ivr_crudo) + 1.0) / 2.0));
+}
+
+//+------------------------------------------------------------------+
+//| [LAB-V8] Vida v3 vivo: espejo de v3_raw_nb + v3_comp_nb (vida_v3.py)   |
+//+------------------------------------------------------------------+
+double CalcularVida3Vivo(CerebroSuperv &sv, double p, double mfe, double mae, double v, double cg, double cn, double minp, double vf, double c) {
+   double hv = sv.vida_h / 60.0;
+   double fet = (v <= 2.0) ? 0.5 : (cg / cn);
+   double efr = (1.0 + p / (mfe + MathAbs(mae) + c + 1e-12)) / 2.0;
+   if(efr < 0.0) efr = 0.0;
+   if(efr > 1.0) efr = 1.0;
+   double dh = 1.0 / (1.0 + MathAbs(mae) / sv.vida_h);
+   bool apl = ((-minp) > c);
+   double rec = 0.0;
+   if(apl) rec = (p - minp) / (MathMax(v - vf, 1.0) * hv + 1e-12);
+   double rit = p / (MathMax(v, sv.vida_rit_vmin) * hv + 1e-12);
+   double s0 = (MathTanh((efr - sv.vida_med[0]) / sv.vida_esc[0]) + 1.0) / 2.0;
+   double s1 = (MathTanh((dh  - sv.vida_med[1]) / sv.vida_esc[1]) + 1.0) / 2.0;
+   double s2 = (MathTanh((fet - sv.vida_med[2]) / sv.vida_esc[2]) + 1.0) / 2.0;
+   double s3 = sv.vida_rec_na;
+   if(apl) s3 = (MathTanh((rec - sv.vida_med[3]) / sv.vida_esc[3]) + 1.0) / 2.0;
+   double s4 = (MathTanh((rit - sv.vida_med[4]) / sv.vida_esc[4]) + 1.0) / 2.0;
+   return (((sv.vida_peso[0] * s0 + sv.vida_peso[1] * s1) + sv.vida_peso[2] * s2) + sv.vida_peso[3] * s3) + sv.vida_peso[4] * s4;
 }
 
 //+------------------------------------------------------------------+
@@ -664,6 +697,15 @@ void SincronizarEstadosReales() {
                   }
                   g_pares[p].max_toro = max_hist; g_pares[p].min_toro = min_hist;
                   g_pares[p].t_gain_toro = tg;   g_pares[p].t_loss_toro = tl;
+                  g_pares[p].v3_cg_toro = 0.0; g_pares[p].v3_cn_toro = 0.0; g_pares[p].v3_minp_toro = 1e30; g_pares[p].v3_vf_toro = 0.0;
+                  if(g_pares[p].superv_toro.vida_activa && shift_apertura > 1) { // LAB-V8: reconstruye el estado vivo de Vida v3 desde el histórico (SSoT §3.7); la foto actual se suma en vivo
+                     for(int nv=1; nv<shift_apertura; nv++) {
+                        double op_n = iOpen(g_pares[p].simbolo, TF_Accion, shift_apertura - nv);
+                        double pr_n = ((op_n - price_open) / g_pares[p].divisorPips) - g_pares[p].spread_asumido_ia;
+                        if(nv >= 2) { g_pares[p].v3_cn_toro += 1.0; if(pr_n > 0.0) g_pares[p].v3_cg_toro += 1.0; }
+                        if(pr_n < g_pares[p].v3_minp_toro) { g_pares[p].v3_minp_toro = pr_n; g_pares[p].v3_vf_toro = (double)nv; }
+                     }
+                  }
                   
                   string gv_v = ObtenerGV_VREQ(t); string gv_z = ObtenerGV_ZPRED(t); string gv_t0 = ObtenerGV_THAT0(t);
                   g_pares[p].v_req_toro  = (GlobalVariableCheck(gv_v))  ? GlobalVariableGet(gv_v)  : 0.0;
@@ -688,6 +730,15 @@ void SincronizarEstadosReales() {
                   }
                   g_pares[p].max_oso = max_hist; g_pares[p].min_oso = min_hist;
                   g_pares[p].t_gain_oso = tg;    g_pares[p].t_loss_oso = tl;
+                  g_pares[p].v3_cg_oso = 0.0; g_pares[p].v3_cn_oso = 0.0; g_pares[p].v3_minp_oso = 1e30; g_pares[p].v3_vf_oso = 0.0;
+                  if(g_pares[p].superv_oso.vida_activa && shift_apertura > 1) { // LAB-V8: reconstruye el estado vivo de Vida v3 desde el histórico (SSoT §3.7); la foto actual se suma en vivo
+                     for(int nv=1; nv<shift_apertura; nv++) {
+                        double op_n = iOpen(g_pares[p].simbolo, TF_Accion, shift_apertura - nv);
+                        double pr_n = ((price_open - op_n) / g_pares[p].divisorPips) - g_pares[p].spread_asumido_ia;
+                        if(nv >= 2) { g_pares[p].v3_cn_oso += 1.0; if(pr_n > 0.0) g_pares[p].v3_cg_oso += 1.0; }
+                        if(pr_n < g_pares[p].v3_minp_oso) { g_pares[p].v3_minp_oso = pr_n; g_pares[p].v3_vf_oso = (double)nv; }
+                     }
+                  }
                   
                   string gv_v_o = ObtenerGV_VREQ(t); string gv_z_o = ObtenerGV_ZPRED(t); string gv_t0_o = ObtenerGV_THAT0(t);
                   g_pares[p].v_req_oso  = (GlobalVariableCheck(gv_v_o))  ? GlobalVariableGet(gv_v_o)  : 0.0;
@@ -706,6 +757,7 @@ void SincronizarEstadosReales() {
          g_pares[p].ticket_toro = 0; g_pares[p].p_in_toro = 0; g_pares[p].max_toro = 0; g_pares[p].min_toro = 0; 
          g_pares[p].v_req_toro = 0;  g_pares[p].z_pred_toro = 0; g_pares[p].t_hat0_toro = 0;
          g_pares[p].t_gain_toro = 0; g_pares[p].t_loss_toro = 0;
+         g_pares[p].v3_cg_toro = 0.0; g_pares[p].v3_cn_toro = 0.0; g_pares[p].v3_minp_toro = 1e30; g_pares[p].v3_vf_toro = 0.0; // LAB-V8
       }
       if(g_pares[p].ticket_oso > 0 && !mt5_oso_vivo[p]) { 
          GlobalVariableDel(ObtenerGV_VREQ(g_pares[p].ticket_oso)); 
@@ -714,6 +766,7 @@ void SincronizarEstadosReales() {
          g_pares[p].ticket_oso = 0;  g_pares[p].p_in_oso = 0;  g_pares[p].max_oso = 0;  g_pares[p].min_oso = 0;  
          g_pares[p].v_req_oso = 0;   g_pares[p].z_pred_oso = 0;  g_pares[p].t_hat0_oso = 0;
          g_pares[p].t_gain_oso = 0;  g_pares[p].t_loss_oso = 0;
+         g_pares[p].v3_cg_oso = 0.0; g_pares[p].v3_cn_oso = 0.0; g_pares[p].v3_minp_oso = 1e30; g_pares[p].v3_vf_oso = 0.0; // LAB-V8
       }
    }
 }
@@ -964,6 +1017,10 @@ void AnalizarMercado(datetime target_time) {
           
           double prof_cnt_toro = ((iOpen(s, TF_Accion, 1) - g_pares[i].p_in_toro) * pips_mult) - costo_trx_dinamico; // H-EA-TG-01: cuenta el open de la vela cerrada (Python: opens[i])
           if(prof_cnt_toro > 0.0) g_pares[i].t_gain_toro++; else g_pares[i].t_loss_toro++;
+          if(g_pares[i].superv_toro.vida_activa) { // LAB-V8: estado vivo de Vida v3 (Python: bloque v3p en el kernel)
+             if((double)velas_abiertas >= 2.0) { g_pares[i].v3_cn_toro += 1.0; if(profit_apertura > 0.0) g_pares[i].v3_cg_toro += 1.0; }
+             if(profit_apertura < g_pares[i].v3_minp_toro) { g_pares[i].v3_minp_toro = profit_apertura; g_pares[i].v3_vf_toro = (double)velas_abiertas; }
+          }
           EmitirResultadoVela(s, "LONG", g_pares[i].ticket_toro, profit_apertura > 0.0); 
           
           double tolerancia_fijada = (g_pares[i].ml_toro.tolerancia_vida > 0.0) ? g_pares[i].ml_toro.tolerancia_vida : 1.5;
@@ -1021,6 +1078,8 @@ void AnalizarMercado(datetime target_time) {
                       double m_mae_s = MathMin(mae_previo, bruto_s);
                       double t_obs_s = CalcularTScoreTrade(m_mfe_s, m_mae_s, profit_apertura, (double)g_pares[i].t_gain_toro, (double)g_pares[i].t_loss_toro, costo_trx_dinamico);
                       double dT = MathMin(MathMax(t_obs_s - g_pares[i].t_hat0_toro, -1.0), 1.0);
+                      if(g_pares[i].superv_toro.vida_activa) // LAB-V8: ΔT con Vida v3 vivo
+                         dT = MathMin(MathMax(CalcularVida3Vivo(g_pares[i].superv_toro, profit_apertura, m_mfe_s, m_mae_s, (double)velas_abiertas, g_pares[i].v3_cg_toro, g_pares[i].v3_cn_toro, g_pares[i].v3_minp_toro, g_pares[i].v3_vf_toro, costo_trx_dinamico) - g_pares[i].t_hat0_toro, -1.0), 1.0);
                       T_Pred_Live += (g_pares[i].superv_toro.w_superv[8] * dT);
                       T_Pred_Live += (g_pares[i].superv_toro.w_superv[9] * (dT * Theta)); // LAB-V7 H-EA-ULP: suma secuencial = (s+a)+b, igual que el kernel Python
                   }
@@ -1065,6 +1124,7 @@ void AnalizarMercado(datetime target_time) {
          if(autorizado_ml) {
              g_pares[i].t_hat0_toro = that0_calc;
              g_pares[i].t_gain_toro = 0; g_pares[i].t_loss_toro = 0;
+             g_pares[i].v3_cg_toro = 0.0; g_pares[i].v3_cn_toro = 0.0; g_pares[i].v3_minp_toro = 1e30; g_pares[i].v3_vf_toro = 0.0; // LAB-V8
              EncolarMensaje(i, MSG_APERTURA_COMPRA, ORIGEN_ENTRADA_SAR, 0, lote_base_por_equidad * MathAbs(zscore_base_toro_in), g_pares[i].magicToro, zpred_calc, vreq_calc, that0_calc);
          }
       } else if(opsToro && salir_toro) EncolarCierresPorMagic(i, g_pares[i].magicToro, origen_cierre_toro);
@@ -1085,6 +1145,10 @@ void AnalizarMercado(datetime target_time) {
           
           double prof_cnt_oso = ((g_pares[i].p_in_oso - iOpen(s, TF_Accion, 1)) * pips_mult) - costo_trx_dinamico; // H-EA-TG-01: cuenta el open de la vela cerrada (Python: opens[i])
           if(prof_cnt_oso > 0.0) g_pares[i].t_gain_oso++; else g_pares[i].t_loss_oso++;
+          if(g_pares[i].superv_oso.vida_activa) { // LAB-V8: estado vivo de Vida v3 (Python: bloque v3p en el kernel)
+             if((double)velas_abiertas >= 2.0) { g_pares[i].v3_cn_oso += 1.0; if(profit_apertura > 0.0) g_pares[i].v3_cg_oso += 1.0; }
+             if(profit_apertura < g_pares[i].v3_minp_oso) { g_pares[i].v3_minp_oso = profit_apertura; g_pares[i].v3_vf_oso = (double)velas_abiertas; }
+          }
           EmitirResultadoVela(s, "SHORT", g_pares[i].ticket_oso, profit_apertura > 0.0); 
           
           double tolerancia_fijada = (g_pares[i].ml_oso.tolerancia_vida > 0.0) ? g_pares[i].ml_oso.tolerancia_vida : 1.5;
@@ -1142,6 +1206,8 @@ void AnalizarMercado(datetime target_time) {
                       double m_mae_s = MathMin(mae_previo, bruto_s);
                       double t_obs_s = CalcularTScoreTrade(m_mfe_s, m_mae_s, profit_apertura, (double)g_pares[i].t_gain_oso, (double)g_pares[i].t_loss_oso, costo_trx_dinamico);
                       double dT = MathMin(MathMax(t_obs_s - g_pares[i].t_hat0_oso, -1.0), 1.0);
+                      if(g_pares[i].superv_oso.vida_activa) // LAB-V8: ΔT con Vida v3 vivo
+                         dT = MathMin(MathMax(CalcularVida3Vivo(g_pares[i].superv_oso, profit_apertura, m_mfe_s, m_mae_s, (double)velas_abiertas, g_pares[i].v3_cg_oso, g_pares[i].v3_cn_oso, g_pares[i].v3_minp_oso, g_pares[i].v3_vf_oso, costo_trx_dinamico) - g_pares[i].t_hat0_oso, -1.0), 1.0);
                       T_Pred_Live += (g_pares[i].superv_oso.w_superv[8] * dT);
                       T_Pred_Live += (g_pares[i].superv_oso.w_superv[9] * (dT * Theta)); // LAB-V7 H-EA-ULP: suma secuencial = (s+a)+b, igual que el kernel Python
                   }
@@ -1186,6 +1252,7 @@ void AnalizarMercado(datetime target_time) {
          if(autorizado_ml) {
              g_pares[i].t_hat0_oso = that0_calc_oso;
              g_pares[i].t_gain_oso = 0; g_pares[i].t_loss_oso = 0;
+             g_pares[i].v3_cg_oso = 0.0; g_pares[i].v3_cn_oso = 0.0; g_pares[i].v3_minp_oso = 1e30; g_pares[i].v3_vf_oso = 0.0; // LAB-V8
              EncolarMensaje(i, MSG_APERTURA_VENTA, ORIGEN_ENTRADA_SAR, 0, lote_base_por_equidad * MathAbs(zscore_base_oso_in), g_pares[i].magicOso, zpred_calc_oso, vreq_calc_oso, that0_calc_oso);
          }
       } else if(opsOso && salir_oso) EncolarCierresPorMagic(i, g_pares[i].magicOso, origen_cierre_oso);
@@ -1259,7 +1326,9 @@ int OnInit() {
       
       g_pares[i].t_hat0_toro = 0.0; g_pares[i].t_hat0_oso = 0.0;
       g_pares[i].t_gain_toro = 0;   g_pares[i].t_loss_toro = 0;
+      g_pares[i].v3_cg_toro = 0.0; g_pares[i].v3_cn_toro = 0.0; g_pares[i].v3_minp_toro = 1e30; g_pares[i].v3_vf_toro = 0.0; g_pares[i].superv_toro.vida_activa = false; // LAB-V8: apagado por defecto
       g_pares[i].t_gain_oso  = 0;   g_pares[i].t_loss_oso  = 0;
+      g_pares[i].v3_cg_oso = 0.0; g_pares[i].v3_cn_oso = 0.0; g_pares[i].v3_minp_oso = 1e30; g_pares[i].v3_vf_oso = 0.0; g_pares[i].superv_oso.vida_activa = false; // LAB-V8: apagado por defecto
 
       ArrayResize(g_deltaNominal[i].cols, g_numTFs); 
       

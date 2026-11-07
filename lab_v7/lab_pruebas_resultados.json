@@ -115,6 +115,10 @@
    "cadena_v7_carpetas_A_B_iguales": true,
    "vida_v3_tag_igual_Fase4": true,
    "vida_v3_carpetas_A_B_iguales": true,
+   "t_v3_vid31_tag_igual_Fase4": true,
+   "t_v3_vid31_carpetas_A_B_iguales": true,
+   "cadena_v8_tag_igual_Fase4": true,
+   "cadena_v8_carpetas_A_B_iguales": true,
    "cadena_v7_vida_tag_igual_Fase4": true,
    "cadena_v7_vida_carpetas_A_B_iguales": true,
    "f3_v7_lleva_F3V7": true,
@@ -180,6 +184,16 @@
    "solo_lineas_permitidas_modificadas": true,
    "cantidad_modificadas": 6,
    "no_permitidas": []
+  },
+  "pasa": true
+ },
+ "L17_bloque_vida_ida_y_vuelta": {
+  "detalle": {
+   "superv_toro_ida_y_vuelta_exacta": true,
+   "superv_toro_sin_V3P_vacio_y_parse_None": true,
+   "superv_oso_ida_y_vuelta_exacta": true,
+   "superv_oso_sin_V3P_vacio_y_parse_None": true,
+   "lado_cruzado_no_se_lee": true
   },
   "pasa": true
  },

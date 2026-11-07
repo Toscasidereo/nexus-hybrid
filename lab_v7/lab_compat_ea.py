@@ -13,6 +13,8 @@
 #     C4 T_pred: la expresión del EA (texto real, compilada) == la expresión del kernel Python, bit a bit (ambas con los pesos del texto).
 #        Si no, se mide cuántas comparaciones `T_pred < K_abortar` cambian de signo (informe, no se oculta).
 #     C5 Efecto del redondeo del export: diferencia entre la escala/T_pred con parámetros sin redondear (entrenamiento) y redondeados (EA).
+#   V0.2 (2026-11-07, lab-v8) — C6: `CalcularVida3Vivo` del EA (texto real, g++) == `v3_vivo_nb` (numba) bit a bit, con las constantes leídas del bloque exportado
+#        (long y short); sin V3P el bloque no contiene campos `vida_*`. C1 de tamaño off/A/B no cambia.
 #   Uso: python lab_v7/lab_compat_ea.py  -> escribe lab_v7/lab_compat_ea_resultados.json
 # ==============================================================================
 import os, sys, re, json, subprocess, tempfile
@@ -190,6 +192,57 @@ int main(int argc, char** argv) {
 out['C3_escala_EA_compilada_vs_Python'] = {'detalle': c3, 'pasa': all(v for k, v in c3.items() if isinstance(v, bool))}
 out['C4_T_pred_EA_compilada_vs_Python'] = {'detalle': c4, 'pasa': bool(sum(k.endswith('bit_a_bit') for k in c4) == 2 and all(v for k, v in c4.items() if k.endswith('bit_a_bit')))}
 out['C5_efecto_del_redondeo_de_export'] = {'detalle': c5, 'informativo': True}
+
+# --- C6 [LAB-V8]: Vida v3 vivo del EA compilada vs numba, con las constantes leídas del TEXTO exportado ------------------------------------------
+c6 = {}
+F_V3 = extraer_funcion(r'double\s+CalcularVida3Vivo\s*\(')
+c6['funcion_presente_en_EA'] = bool(F_V3)
+if F_V3:
+    import vida_v3 as VV
+    gv = np.random.default_rng(31)
+    v3p0 = np.array([30.0, 3.0, 1.0] + list(gv.uniform(0.3, 0.7, 5)) + list(gv.uniform(0.2, 1.5, 5)) + [0.2] * 5)
+    v3p_txt = np.array([float(f"{x:.{L.DEC_W}f}") for x in v3p0])
+    NV3 = 4000
+    P = gv.normal(0, 3, NV3); MFE = np.abs(gv.normal(4, 3, NV3)) + np.maximum(P, 0); MAE = -np.abs(gv.normal(3, 2, NV3)) + np.minimum(P, 0)
+    VEL = gv.integers(1, 60, NV3).astype(np.float64); CNn = np.maximum(VEL - 1.0, 1.0); CGg = np.floor(CNn * gv.uniform(0, 1, NV3))
+    MINP = np.minimum(P, -np.abs(gv.normal(1, 1.5, NV3))); VF = np.minimum(VEL, np.floor(gv.uniform(1, 60, NV3))); CS = 1.0
+    for lado in ('L', 'S'):
+        bl, _ = bloque({'V3P': v3p_txt}, None, 10, lado)
+        sv = 'superv_toro' if lado == 'L' else 'superv_oso'
+        hv = SHIM + "#define MathMax fmax\n#define MathMin fmin\n#define MathTanh tanh\n" + ENUMS + "\n" + STRUCTS + \
+            "\nstruct Par { ConfigPar cfg; CerebroML ml_toro, ml_oso; CerebroSuperv superv_toro, superv_oso; };\nstatic Par g_pares[1];\n" + F_V3 + "\nvoid cargar() { int idx = 0;\n" + bl + "\n}\n" + r"""
+int main(int argc, char** argv) {
+   cargar(); FILE* f = fopen(argv[1], "rb"); int N; fread(&N, 4, 1, f);
+   std::vector<double> A(N*8); fread(A.data(), 8, N*8, f); fclose(f);
+   FILE* o = fopen(argv[2], "wb");
+   for (int n = 0; n < N; n++) {
+      double v = CalcularVida3Vivo(g_pares[0].@@SV@@, A[n*8+0], A[n*8+1], A[n*8+2], A[n*8+3], A[n*8+4], A[n*8+5], A[n*8+6], A[n*8+7], 1.0);
+      fwrite(&v, 8, 1, o);
+   }
+   fclose(o); return 0;
+}
+""".replace('@@SV@@', sv)
+        ok, err, exe, d = compilar(hv, f'v3_{lado}')
+        c6[f'{lado}_compila'] = bool(ok)
+        if not ok:
+            c6[f'{lado}_error'] = err; continue
+        A = np.column_stack([P, MFE, MAE, VEL, CGg, CNn, MINP, VF])
+        with open(os.path.join(d, 'in.bin'), 'wb') as fh:
+            fh.write(np.int32(NV3).tobytes()); fh.write(np.ascontiguousarray(A, dtype=np.float64).tobytes())
+        subprocess.run([exe, os.path.join(d, 'in.bin'), os.path.join(d, 'out.bin')], check=True)
+        ea_v = np.fromfile(os.path.join(d, 'out.bin'), dtype=np.float64)
+        # constantes tal como las ve el EA: texto -> numero
+        medtxt = [float(x) for x in re.findall(r'\.vida_med\[\d\]=([-\d.]+);', bl)]
+        c6[f'{lado}_texto_trae_5_med_5_esc_5_peso'] = bool(len(medtxt) == 5 and len(re.findall(r'\.vida_esc\[\d\]=', bl)) == 5 and len(re.findall(r'\.vida_peso\[\d\]=', bl)) == 5)
+        py_v = np.array([VV.v3_vivo_nb(P[k], MFE[k], MAE[k], VEL[k], CGg[k], CNn[k], MINP[k], VF[k], CS, v3p_txt) for k in range(NV3)])
+        c6[f'{lado}_V3_vivo_EA_igual_numba_bit_a_bit'] = bool(np.array_equal(ea_v.view(np.int64), py_v.view(np.int64)))
+        c6[f'{lado}_filas_distintas'] = int((ea_v != py_v).sum()); c6[f'{lado}_max_abs'] = float(np.abs(ea_v - py_v).max())
+        c6[f'{lado}_bloque_activa_vida'] = bool('vida_activa = true' in bl)
+for lado in ('L', 'S'):
+    bl0, _ = bloque({}, None, 10, lado)
+    c6[f'{lado}_sin_V3P_no_hay_bloque_vida'] = bool('vida_' not in bl0)
+out['C6_Vida_v3_vivo_EA_compilada_vs_numba'] = {'detalle': c6, 'pasa': bool(c6.get('funcion_presente_en_EA')) and all(v for k, v in c6.items() if isinstance(v, bool)) and all(c6.get(f'{l}_V3_vivo_EA_igual_numba_bit_a_bit') is not None for l in 'LS')}
+
 out['todas_pasan'] = all(v.get('pasa', True) for v in out.values() if isinstance(v, dict))
 json.dump(out, open(os.path.join(AQUI, 'lab_compat_ea_resultados.json'), 'w'), indent=1, ensure_ascii=False, default=str)
 print(json.dumps(out, indent=1, ensure_ascii=False, default=str)[:6000])

@@ -1,4 +1,4 @@
-# LAB V7 — GUÍA DE LA VM (de la carpeta al cerebro exportado)
+# LAB V8 (rama lab-v8, sobre lab-v7) — GUÍA DE LA VM (de la carpeta al cerebro exportado)
 
 ## 0. Qué hay en esta carpeta
 - Raíz: `nexus_formulas_core.py`, `nexus_tablero.py` (geometría WFO), `requirements.txt`, `limpiar_cache.sh`, y las fases de main (`Fase_0`, `Fase_1___2`, y las copias de main que usan las pruebas).
@@ -9,7 +9,9 @@
 |---|---|---|
 | Métrica de búsqueda/selección | `tablero_lab.env` NEXUS_LAB_METRICA | v7 |
 | CSV de Fase 3 que lee Fase 4 | NEXUS_LAB_F3 | v7 |
-| Qué aprende el Ridge 2 | NEXUS_LAB_CIERRE | V3 |
+| Qué aprende el Ridge 2 | NEXUS_LAB_CIERRE | V3 (también dV3) |
+| Escala de la Cabeza B y del ΔT vivo (lab-v8) | NEXUS_LAB_T | V3 (T = comportamiento lab-v7) |
+| Versión de Vida v3 (lab-v8) | NEXUS_LAB_VIDA | 3.1 (3.0 = lab-v7) |
 | Escala de v_req | NEXUS_LAB_TAMANO | A |
 | Gemelo nulo (diagnóstico, no exportable) | NEXUS_LAB_NULO | 0 |
 | Símbolos | NEXUS_LAB_SIMBOLOS | vacío = 28 (recomendado empezar con 1) |
@@ -26,7 +28,7 @@ Las constantes finas (rangos de Optuna, mínimos de operaciones, alphas, grilla 
 4. Medir: pon `NEXUS_LAB_F3_MEDIR=200` y `NEXUS_LAB_SIMBOLOS=EURUSDm` → `bash /ruta/lab_v7/correr_tablero.sh f3`. Imprime ms por trial y la estimación total. Vuelve `F3_MEDIR=0`.
 5. Fase 3: `bash /ruta/lab_v7/correr_tablero.sh f3` → `Reporte_Fase3_WFO_V5.8_{SIMBOLO}_MV7.csv`.
 6. Fases 4 y 4.5: `bash /ruta/lab_v7/correr_tablero.sh f4` → `Cerebro_MQL5_*_{SIMBOLO}.txt`, `Reporte_OOS_Phase4_*.csv`, carpeta `F45_V12_E3_LAB_...`.
-7. EA: pega el bloque de `Cerebro_MQL5_*.txt` dentro de `CargarConfiguracionesOptuna` de `EA_V12.01_LAB.txt`, compila y prueba en el probador.
+7. EA: con NEXUS_LAB_T=V3 el bloque exportado trae campos `vida_*`; el EA gemelo de lab-v8 los lee (hay que recompilarlo en MetaEditor). Pega el bloque de `Cerebro_MQL5_*.txt` dentro de `CargarConfiguracionesOptuna` de `EA_V12.01_LAB.txt`, compila y prueba en el probador.
 
 ## 3. Reglas
 - No mezclar tableros: todas las fases deben correr con el MISMO `tablero_lab.env` y el MISMO `nexus_tablero.py`. El sello lo verifica y se niega a seguir si no coinciden.
@@ -47,3 +49,8 @@ Las constantes finas (rangos de Optuna, mínimos de operaciones, alphas, grilla 
   `cd carpeta_de_trabajo && nohup bash ../nexus-hybrid-lab-v7/lab_v7/correr_tablero.sh f3 > f3.log 2>&1 &`
   y mira el avance con `tail -f f3.log`. Lo mismo con `f4`.
 - Si Jupyter corre en un contenedor sin `bash`/`nohup`, avísame el mensaje de error.
+
+## Notas lab-v8
+- Con NEXUS_LAB_T=T y NEXUS_LAB_VIDA=3.0 y CIERRE sin dV3, el lab reproduce lab-v7 (prueba N2).
+- Con T=V3, Fase 4 y 4.5 deben correr con el mismo T/VIDA: las etiquetas de archivo llevan `_TV3` / `_VID31` y 4.5 busca el cerebro con la misma etiqueta (si T/VIDA difieren, no lo encuentra).
+- Nada de V3 en Cabeza B/ΔT se ha corrido con datos reales: son hipótesis a decidir con corridas pareadas (T vs V3).
