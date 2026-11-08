@@ -1,5 +1,7 @@
 # NEXUS LAB-V7 — laboratorio paralelo de Score_v7 y T_v2
 
+> **Versiones.** Esta carpeta es la misma en las ramas `lab-v7` y `lab-v8`: la versión la dice la rama. En `lab-v8` se añaden las reformas de Vida v3 (ver `VERSIONES.md` para saber qué archivo es de cada versión y `ESPECIFICACION_VIDA_V3_EXT.md` para la extensión). El resto de este README describe lab-v7.
+
 Rama `lab-v7`, creada desde `main` el 2026-11-01 por orden del CRO. **No se fusiona con `main`.** No modifica ningún archivo del laboratorio (`nexus_formulas_core.py`, `Fase_*.py`, EA). Todo el código vive en `lab_v7/`.
 
 Fórmulas: `claude/metricas_score_v7_propuesta.md` (sección 6) del proyecto Auditoría. Auditoría de la propuesta: `claude/auditoria_score_v7.md`.
