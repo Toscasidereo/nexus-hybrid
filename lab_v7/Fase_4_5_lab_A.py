@@ -3,6 +3,12 @@
 # ⚡ SIMULADOR FORENSE OOS + AUDITORÍA DE PARIDAD DE SILICIO + TRIBUNAL DE CARTERA
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA CON FASE 4 V12 Y EA V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V8 V0.1 (2026-11-07; cabecera añadida 2026-11-08, H-V8-01) — LECTURA DEL BLOQUE `vida_*` Y SIMULACIÓN CON VIDA v3 (rama lab-v8, sobre lab-v7; `main` intacto):
+#      Orden del CRO: "extender v3 ... luz verde". Las marcas `[LAB-V8]` del código señalan cada cambio.
+#      • Lee el bloque `vida_*` exportado por Fase_4_lab.py y simula el Ridge 2 con el V3 vivo cuando el cerebro lo trae; mismos interruptores NEXUS_LAB_T / NEXUS_LAB_VIDA para el tag y la carpeta.
+#      • [H-EA-ULP] La suma de `t_pred` del Ridge 2 de 10 características es secuencial (alineada con Fase 4 lab y con el EA gemelo); difiere del kernel de `main` en ≤ 1 ULP.
+#        La prueba L9 lo documenta: sin supervisión, bit a bit; con supervisión, decisiones (enteros) idénticas y flotantes a 1e-9 relativo.
+#      • Estado: [HECHO EJECUTADO] lab_pruebas L1–L17 pasan con datos sintéticos. [NO CORRIDO] corrida con datos reales.
 # 📋 BITÁCORA LAB-V7 V0.1 (2026-11-04) — COPIA DE LABORATORIO de Fase_4_5_V_12_0_A.py (rama lab-v7; `main` intacto):
 #    Orden del CRO: "Alinea todas las fases de python, para que funcione el lab 7".
 #    - Tag y carpeta de salida desde las mismas variables NEXUS_LAB_* que Fase_4_lab.py (apagadas = nombres y comportamiento de main).

@@ -3,6 +3,15 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V8 V0.1 (2026-11-07; cabecera añadida 2026-11-08, H-V8-01) — VIDA v3 EXTENDIDA A CABEZA B, ΔT VIVO Y KERNELS (rama lab-v8, sobre lab-v7 ff7ae24; `main` y lab-v7 intactos):
+#      Orden del CRO: "extender v3 ... luz verde". Las marcas `[LAB-V8]` del código (desde la importación de vida_v3) señalan cada cambio.
+#      • Interruptores nuevos: NEXUS_LAB_T = T (defecto, = lab-v7) | V3 (la Cabeza B aprende V3 terminal y ΔT = clip(V3_vivo − T_hat0)); NEXUS_LAB_VIDA = 3.0 (defecto) | 3.1;
+#        NEXUS_LAB_CIERRE acepta además dV3 (target V3_terminal − V3_vivo). Con los defectos, las salidas y el comportamiento son los de lab-v7.
+#      • Kernels de simulación: argumentos finales opcionales (`v3p=None`, `v3_cols=None`) con ramas `if v3p is not None`; sin ellos, bit a bit igual a main (prueba L1).
+#      • Constantes de Vida (v3p, 18 valores, redondeadas a 8 decimales) desde las operaciones IS del extractor de Ridge 1; las filas del extractor ganan 3 columnas (FET_v3, P_fondo, V_fondo).
+#      • El bloque exportado agrega los campos `vida_*` solo con V3 activo; las etiquetas de salida llevan `_TV3` / `_VID31`. `T_hat0` sigue siendo clip(T_raw, 0, 1), ahora en escala V3 si T=V3.
+#      • Estado: [HECHO EJECUTADO] lab_pruebas L1–L17, v8_pruebas y lab_compat_ea pasan con datos sintéticos (commits 90c80a1, c7b6bf2).
+#        [NO CORRIDO] exportación de punta a punta con datos reales. Que V3 supere a T(t) es hipótesis, a decidir con corridas pareadas.
 # 📋 BITÁCORA LAB-V7 V0.5 (2026-11-06) — VIDA v3 COMO TARGET DE RIDGE 2 (orden del CRO: aprobó el diseño de la métrica de la vida del trade y pidió implementarlo):
 #      • NEXUS_LAB_CIERRE = V3: el Ridge 2 aprende `V3` terminal (compuesto de 5 descriptores: captura, hundimiento, tiempo a favor, recuperación,
 #        ritmo; ver vida_v3.py y ESPECIFICACION_VIDA_V3.md). Constantes de normalización (med, escala) y `h` solo del IS de cada candidato.

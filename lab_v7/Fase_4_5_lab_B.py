@@ -3,6 +3,9 @@
 # ⚡ ANÁLISIS DE ESTRÉS CONCURRENTE + DRAWDOWN FLOTANTE + DECAIMIENTO TEMPORAL
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + SOPORTE MULTI-ESCALÓN E0..E3 (V12.0)
 # ==============================================================================
+# 📋 BITÁCORA LAB-V8 V0.1 (2026-11-07; cabecera añadida 2026-11-08, H-V8-01) — INTERRUPTORES T Y VIDA EN EL TAG (rama lab-v8, sobre lab-v7; `main` intacto):
+#      Orden del CRO: "extender v3 ... luz verde". Lee NEXUS_LAB_T y NEXUS_LAB_VIDA para que el tag y la carpeta de entrada coincidan con los de Fase_4_lab.py y Fase_4_5_lab_A.py
+#      (sufijos `_TV3` / `_VID31`). Sin esos interruptores, nombres y comportamiento son los de lab-v7. El cálculo no cambia.
 # 📋 BITÁCORA LAB-V7 V0.1 (2026-11-04) — COPIA DE LABORATORIO de Fase_4_5_V_12_0_B.py (rama lab-v7; `main` intacto):
 #    Solo cambia la carpeta de entrada: usa el mismo sufijo `_LAB_...` que Fase_4_5_lab_A.py (variables NEXUS_LAB_*). Apagadas = main.
 # ==============================================================================
