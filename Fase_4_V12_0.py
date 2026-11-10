@@ -3,6 +3,12 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA V12.0 — PARCHE H-AUD8-02 (2026-11-09; luz verde del CRO: "Procede con el parche en main"):
+#    - `_bloque_mql5`: el bloque RANK #1 termina en salto de línea. Antes, cuando se exportaba exactamente un campeón LONG y al menos uno
+#      SHORT, la última línea del LONG (`w_superv`) quedaba pegada a la cabecera del SHORT; `leer_cerebro` de Fase 4.5 A tomaba esa línea
+#      como cabecera y descartaba el motor LONG (`variable_ausente:superv_toro.w_superv[0]`), de modo que el portafolio de 4.5 B no
+#      incluía un motor que el EA sí ejecutaría. Ningún valor exportado cambia; para el compilador MQL5 es espacio en blanco.
+#      Prueba: `auditoria/prueba_cerebro_un_long_un_short.py` (falla sin el parche, pasa con él). Mismo parche en lab-v8 (commit df69b3a).
 # 📋 BITÁCORA V12.0 (promoción mayor — paridad activa con silicio EA V12.01+):
 #    - [H-M7-01 / H-M0-01 CERRADO EN SILICIO] El generador `_bloque_mql5` deja de emitir
 #      la Cabeza B y Ridge 2 extendido como comentarios de "contrato pendiente". Ahora
@@ -1129,7 +1135,7 @@ def _bloque_mql5(c, export_idx, dir_nombre, cfg, ml, sv, emoji, umbral):
     M_in, R_in, P_in, B_in, A_in, arm_in, chq_in = parse_mql5_gatillo(row['⚖️ BASE IN'], row['📊 ACUM IN'], row['⚙️ Arm_IN'], row['⚡ Chq_IN'])
     M_out, R_out, P_out, B_out, A_out, arm_out, chq_out = parse_mql5_gatillo(row['⚖️ BASE OUT'], row['📊 ACUM OUT'], row['⚙️ Arm_OUT'], row['⚡ Chq_OUT'])
     prefix = "" if export_idx == 0 else f"\n      /* --- [OPCIONAL {dir_nombre} RANK #{export_idx+1}] ---\n"
-    suffix = "" if export_idx == 0 else "\n      */\n"
+    suffix = "\n" if export_idx == 0 else "\n      */\n"   # [H-AUD8-02] el bloque RANK #1 termina en salto de línea (antes ""): su última línea ya no se pega a la cabecera del bloque siguiente
     wR = c['W_R']; bR = c['B_R']; wS = c['W_S']; bS = c['B_S']; kA = c['K_opt']
     
     # 🧠 Cabeza A de Ridge 1 (10 pesos canónicos)
