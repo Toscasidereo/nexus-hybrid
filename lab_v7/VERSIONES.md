@@ -34,5 +34,5 @@ Nota: Fase 3 no cambia en v8. Las reformas de v8 empiezan en Fase 4.
 | Fecha | Commit | Qué cambió |
 |---|---|---|
 | 2026-11-09 | df69b3a | Parches H-AUD8-01 (`lab_escala_v` en `Fase_4_lab.py`: la decisión sin dato de actividad se excluye del ajuste) y H-AUD8-02 (`_bloque_mql5`: el bloque RANK #1 termina en salto de línea). Pruebas L18 y L19 en `lab_pruebas.py`. La rama `lab-v7` NO lleva estos parches. |
-| 2026-11-10 | (este commit) | Solo documentos: notas en `README.md` (registros, alcance de las pruebas de extremo a extremo, lab-v7 se corre desde lab-v8) y tablas de `DEBATE_VIDA_V3.md` con barras escapadas. Sin cambios de código. |
-
+| 2026-11-10 | ba9a4ca, 2fb54cf | Solo documentos: notas en `README.md` (registros, alcance de las pruebas de extremo a extremo, lab-v7 se corre desde lab-v8) y tablas de `DEBATE_VIDA_V3.md` con barras escapadas. Sin cambios de código. |
+| 2026-11-10 | (commit de informes) | Informes de Fase 4, con luz verde del CRO. Nuevos: `lab_informes.py`, `armar_entrega.py`. Modificados: `Fase_4_lab.py` (anota valores ya calculados y escribe censo, vista, resumen y manifiesto con `NEXUS_LAB_CENSO=1`), `tablero_lab.env`, `correr_tablero.sh`, `verificar_vm.py`, `lab_pruebas.py` (L20), `LEEME_VM.md`. Cerebro y `Reporte_OOS` no cambian. |

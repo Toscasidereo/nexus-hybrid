@@ -50,6 +50,24 @@ Las constantes finas (rangos de Optuna, mínimos de operaciones, alphas, grilla 
   y mira el avance con `tail -f f3.log`. Lo mismo con `f4`.
 - Si Jupyter corre en un contenedor sin `bash`/`nohup`, avísame el mensaje de error.
 
+## 6. Informes de Fase 4 (lab-v8, 2026-11-10)
+Con `NEXUS_LAB_CENSO=1` en el tablero (valor actual), Fase 4 escribe además, sin cambiar la selección ni el cerebro:
+
+| Archivo | Para qué | Tamaño |
+|---|---|---|
+| `Resumen_Fase4_{tag}.md` | Lectura rápida: embudo por símbolo y dirección, Ridge 1, Ridge 2 con y sin, nulo de entrada (C3), exportados | 1-2 páginas |
+| `Vista_Fase4_{tag}_{SIMBOLO}.csv` | Lectura directa del CRO: las primeras `NEXUS_LAB_VISTA_TOP` (50) por dirección y fold, primero las que pasaron; columnas reducidas | chico |
+| `Censo_Fase4_{tag}_{SIMBOLO}.csv` | Análisis completo: UNA fila por configuración leída, pase o no, con la etapa donde cayó y todo lo calculado hasta ahí | 1 fila por configuración |
+| `Manifiesto_Fase4_{tag}.json` | Trazabilidad: commit y sha1 del código, tablero, geometría, cortes IS/OOS/reserva por símbolo, sha1 de entradas y salidas, descartes, errores de informes | chico |
+
+- Etapas del embudo: `1_preparacion` → `2_ridge1` → `3_tamano` → `4_base_is` → `5_ridge2` → `6_compuerta_oos`. `estado` = `paso` o `descartado`; `causa` dice por qué.
+- Columna `ridge2` (solo si la configuración llegó al OOS): `APORTA` = con Ridge 2 mejoran el PF y la mediana de pips en OOS; `MIXTO` = mejora uno; `NO_APORTA` = ninguno; `BASE_RECHAZADA` = sin Ridge 2 el Score_final OOS no era positivo (misma regla que `Reporte_OOS`). Criterio propuesto por el sistema: `[DEFAULT / CRO-OVERRIDE]`.
+- El resumen sale SOLO de los censos del disco; se regenera con `python lab_v7/lab_informes.py TAG` desde la carpeta de trabajo.
+- Entrega: `python lab_v7/armar_entrega.py` (desde la carpeta de trabajo) arma `entrega_AAAAMMDD_HHMM.zip` con resumen, manifiesto, vistas, censos, reportes, cerebros, registros y tableros.
+- Cómo leerlos: las configuraciones de un símbolo se parecen entre sí y los símbolos comparten divisas (tendencias, no pruebas independientes). El OOS de Fase 4 es filtro de exportación; la medición sin filtro es la reserva ciega de Fase 4.5. La tabla "ridge2 solo las que pasaron" favorece a Ridge 2 por construcción: mirar "ridge2 todas".
+- Si cambias `TOP_REPORTE` (Fase 3) a mano, pon `TOP_CANDIDATOS` (Fase 4) ≥ `TOP_REPORTE × N_FOLDS`: el CSV de Fase 3 va ordenado por fold y Fase 4 toma las primeras filas por dirección. El resumen lo delata en la columna `recortadas_por_tope`.
+- Prueba: L20 (`lab_pruebas.py`) cubre el módulo. La identidad byte a byte de cerebro y `Reporte_OOS` entre el código anterior, `CENSO=0` y `CENSO=1` se comprobó con una cadena sintética de dos símbolos fuera del repo (solo flujo). Nada corrió con datos reales.
+
 ## Notas lab-v8
 - Con NEXUS_LAB_T=T y NEXUS_LAB_VIDA=3.0 y CIERRE sin dV3, el lab usa las rutas de código de lab-v7. [Corrección 2026-11-10, H-DOC-01: aquí decía "prueba N2"; esa prueba no existe. Lo demostrado es: interruptores apagados == main bit a bit (L1) y la trayectoria sin v3p produce datos (N1). No hay una prueba que compare esta rama con la rama lab-v7 corrida con el mismo tablero; además, desde df69b3a esta rama difiere de lab-v7 a propósito en H-AUD8-01 y H-AUD8-02.]
 - Con T=V3, Fase 4 y 4.5 deben correr con el mismo T/VIDA: las etiquetas de archivo llevan `_TV3` / `_VID31` y 4.5 busca el cerebro con la misma etiqueta (si T/VIDA difieren, no lo encuentra).

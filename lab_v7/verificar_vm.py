@@ -1,6 +1,7 @@
 # ==============================================================================
 # NEXUS LAB-V7 — VERIFICADOR PREVIO PARA LA VM (solo lectura). Uso: python lab_v7/verificar_vm.py [carpeta_de_trabajo]
 # Bitácora V0.1 (2026-11-06): creación. Orden del CRO: "dejar listos los tableros y configuraciones".
+# Bitácora V0.3 (2026-11-10, lab-v8): acepta NEXUS_LAB_CENSO (0|1), muestra NEXUS_LAB_VISTA_TOP y exige lab_informes.py (informes de Fase 4).
 # Comprueba: versión de Python y paquetes, módulos del repo, tablero de geometría, tablero_lab.env, parquets y CSV por símbolo,
 # RAM/CPU/disco. Sale con código 1 si algo bloquea. No ejecuta ninguna fase.
 # ==============================================================================
@@ -22,7 +23,7 @@ for l in open(os.path.join(RAIZ, 'requirements.txt'), encoding='utf-8'):
     except im.PackageNotFoundError: no(f'falta {m.group(1)}=={m.group(2)}')
 print('2. Archivos del repo')
 for f in ('nexus_formulas_core.py', 'nexus_tablero.py', 'lab_v7/Fase_3_lab.py', 'lab_v7/Fase_4_lab.py', 'lab_v7/Fase_4_5_lab_A.py', 'lab_v7/Fase_4_5_lab_B.py',
-          'lab_v7/v7_metricas.py', 'lab_v7/vida_v3.py', 'lab_v7/lab_escala.py', 'lab_v7/tablero_lab.env', 'lab_v7/correr_tablero.sh'):
+          'lab_v7/v7_metricas.py', 'lab_v7/vida_v3.py', 'lab_v7/lab_escala.py', 'lab_v7/lab_informes.py', 'lab_v7/tablero_lab.env', 'lab_v7/correr_tablero.sh'):
     (ok if os.path.isfile(os.path.join(RAIZ, f)) else no)(f)
 print('3. Tablero de geometría (nexus_tablero.py)')
 try:
@@ -35,9 +36,9 @@ for l in open(os.path.join(AQUI, 'tablero_lab.env'), encoding='utf-8'):
     l = l.strip()
     if l and not l.startswith('#') and '=' in l: k, _, val = l.partition('='); cfg[k] = val.strip()
 perm = {'NEXUS_LAB_METRICA': ('final', 'v7'), 'NEXUS_LAB_F3': ('main', 'v7'), 'NEXUS_LAB_CIERRE': ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), 'NEXUS_LAB_T': ('T', 'V3'), 'NEXUS_LAB_VIDA': ('3.0', '3.1'),
-        'NEXUS_LAB_TAMANO': ('off', 'A', 'B'), 'NEXUS_LAB_NULO': ('0', '1')}
+        'NEXUS_LAB_TAMANO': ('off', 'A', 'B'), 'NEXUS_LAB_NULO': ('0', '1'), 'NEXUS_LAB_CENSO': ('0', '1')}
 for k, p in perm.items(): (ok if cfg.get(k) in p else no)(f'{k}={cfg.get(k)!r} (permitidos {p})')
-for k in ('NEXUS_LAB_SIMBOLOS', 'NEXUS_LAB_N_SIM', 'NEXUS_LAB_STARTUP', 'NEXUS_LAB_F3_MEDIR'): ok(f'{k}={cfg.get(k)!r}')
+for k in ('NEXUS_LAB_SIMBOLOS', 'NEXUS_LAB_N_SIM', 'NEXUS_LAB_STARTUP', 'NEXUS_LAB_F3_MEDIR', 'NEXUS_LAB_VISTA_TOP'): ok(f'{k}={cfg.get(k)!r}')
 if cfg.get('NEXUS_LAB_NULO') == '1' and cfg.get('NEXUS_LAB_TAMANO') != 'off': no('NULO=1 con TAMANO distinto de off no es exportable')
 print(f'5. Datos en la carpeta de trabajo: {TRABAJO}')
 simb = [s.strip() for s in cfg.get('NEXUS_LAB_SIMBOLOS', '').split(',') if s.strip()]

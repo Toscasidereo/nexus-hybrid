@@ -225,5 +225,25 @@
   "demuestra": "una decisión IS sin dato de actividad ya no descarta al candidato y equivale exactamente a no tener esa fila en el ajuste (modos A y B)",
   "no_demuestra": "que el tamaño A o B aporte; ni cuántas decisiones caen sin dato con datos reales"
  },
+ "L20_informes_fase4": {
+  "detalle": {
+   "una_fila_por_candidato": true,
+   "veredictos": true,
+   "estado_final_no_provisional": true,
+   "censo_filas_y_tipos": true,
+   "f3_porcentaje_a_numero": true,
+   "sin_emojis_en_columnas": true,
+   "vista_tope_y_orden": true,
+   "embudo_a_mano": true,
+   "ridge2_a_mano": true,
+   "resumen_escrito": true,
+   "manifiesto_acumula_y_sella": true,
+   "error_contenido_y_contado": true,
+   "fase4_no_importa_informes_con_censo_apagado": true
+  },
+  "pasa": true,
+  "demuestra": "lab_informes escribe una fila por candidato, clasifica Ridge 2 con la regla declarada, el resumen se recalcula desde el censo, la vista respeta el tope y un error del módulo no se propaga",
+  "no_demuestra": "que cerebro y Reporte_OOS sean idénticos con y sin censo (eso se comprobó con una cadena sintética fuera del repo, ver bitácora V1.1); nada sobre datos reales"
+ },
  "todas_pasan": true
 }

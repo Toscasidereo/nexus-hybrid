@@ -45,6 +45,8 @@
 # ==============================================================================
 #   V0.9 (2026-11-07, lab-v8): L9 con supervisión compara con main bit a bit en enteros (decisiones) y con tolerancia 1e-9 relativo en floats: la suma de t_pred es
 #       secuencial en el lab (H-EA-ULP, ≤1 ULP). Sin supervisión sigue bit a bit. L11 añade etiquetas _TV3/_VID31. L17: ida y vuelta lab_bloque_vida -> parse_vida.
+#   V1.1 (2026-11-10, lab-v8): L20 (informes de Fase 4: censo, vista, resumen, manifiesto; módulo lab_informes). La identidad byte a byte de cerebro y Reporte_OOS con NEXUS_LAB_CENSO=0/1
+#        se comprobó con una cadena sintética de dos símbolos fuera del repo (no hay humo de extremo a extremo en el repo: H-AUD8-03).
 #   V1.0 (2026-11-09, lab-v8): L18 (H-AUD8-02: cerebro con un LONG y un SHORT se lee completo en 4.5 A) y L19 (H-AUD8-01: decisión sin dato de actividad se excluye del ajuste). Reglas escritas antes de correr.
 import os, sys, json, subprocess
 import numpy as np
@@ -463,6 +465,63 @@ def main():
         'detalle': l19, 'pasa': all(l19.values()),
         'demuestra': 'una decisión IS sin dato de actividad ya no descarta al candidato y equivale exactamente a no tener esa fila en el ajuste (modos A y B)',
         'no_demuestra': 'que el tamaño A o B aporte; ni cuántas decisiones caen sin dato con datos reales'}
+    # L20 informes de Fase 4 (lab_informes): una fila por candidato, veredicto, resumen recalculable, vista acotada, errores contenidos
+    import lab_informes as INF
+    l20 = {}
+    R20 = lambda sc, pf, mp, n: np.array([sc, 5.0, 2.0, mp, 0.5, 2.5, 55.0, pf, 10.0, 1.2, n, 0.8, 0.3])
+    censo20 = []
+    def cand20(i, dr, fold, etapa, estado, causa, base=None, sup=None, clave=None):
+        row = {'Fold': fold, 'Rank': i + 1, 'Dir': dr, '⚖️ BASE IN': 'Z_M1', '📊 ACUM IN': 'A', '⚙️ Arm_IN': 1.5, '⚡ Chq_IN': 0.5, '⚖️ BASE OUT': 'Z_M5', '📊 ACUM OUT': 'B',
+               '⚙️ Arm_OUT': 1.0, '⚡ Chq_OUT': 0.2, 'Score_IS': 12.5, 'WR %': '55.0%', 'Tab_Hash': 'x', '|': '|'}
+        cz = {'etapa': etapa, '_t0': INF.reloj(), 'r1_r2_T': 0.02 * (i + 1) - 0.03}
+        if base is not None:
+            cz.update(INF.fila_r('oos_base', R20(*base), {'sf': base[0], 'v7': base[0], 'pips': base[2] * base[3]}))
+            cz.update(INF.fila_r('oos_sup', R20(*sup), {'sf': sup[0], 'v7': sup[0], 'pips': sup[2] * sup[3], 'C3': 0.5 + 0.01 * i}))
+        if clave is not None: cz['clave_rank'] = clave
+        INF.registrar(censo20, cz, (i, row), 'XXXYYYm', dr, 'descartado', 'provisional')
+        return INF.registrar(censo20, cz, (i, row), 'XXXYYYm', dr, estado, causa)      # segunda llamada: corrige la misma fila
+    casos20 = [(0, 'LONG', 1, '2_ridge1', 'descartado', 'Cabeza_T_sin_habilidad_OOF', None, None, None),
+               (1, 'LONG', 1, '6_compuerta_oos', 'paso', None, (5.0, 1.10, 1.0, 40), (6.0, 1.30, 1.5, 35), 9.0),       # APORTA
+               (2, 'LONG', 1, '6_compuerta_oos', 'paso', None, (5.0, 1.40, 1.0, 40), (6.0, 1.30, 1.5, 35), 7.0),       # MIXTO
+               (3, 'LONG', 2, '6_compuerta_oos', 'descartado', 'Compuerta_OOS_score_no_positivo', (5.0, 1.40, 2.0, 40), (0.0, 1.10, 1.0, 31), 0.0),   # NO_APORTA
+               (4, 'SHORT', 1, '6_compuerta_oos', 'paso', None, (0.0, 0.90, -1.0, 40), (4.0, 1.20, 0.5, 33), 5.0),     # BASE_RECHAZADA
+               (5, 'SHORT', 1, '4_base_is', 'descartado', 'IS_base_no_robusto', None, None, None),
+               (6, 'SHORT', 1, '6_compuerta_oos', 'paso', None, (3.0, 1.05, 0.5, 40), (4.5, 1.25, 0.9, 36), 8.0)]      # APORTA
+    filas20 = [cand20(*c) for c in casos20]
+    l20['una_fila_por_candidato'] = bool(len(censo20) == len(casos20))
+    l20['veredictos'] = bool([f['ridge2'] for f in filas20] == ['SIN_OOS', 'APORTA', 'MIXTO', 'NO_APORTA', 'BASE_RECHAZADA', 'SIN_OOS', 'APORTA'])
+    l20['estado_final_no_provisional'] = bool(all(f['causa'] != 'provisional' for f in filas20))
+    filas20[1].update(rank_ia=1, en_cerebro=True); filas20[6].update(rank_ia=1, en_cerebro=True)
+    import tempfile
+    with tempfile.TemporaryDirectory() as td20:
+        cwd20 = os.getcwd(); os.chdir(td20)
+        try:
+            sal20 = INF.escribir_censo('XXXYYYm', 'TAGP', censo20, {'Tab_Hash': 'h'}, 1, {'LONG': (9, 4), 'SHORT': (3, 3)})
+            d20 = pd.read_csv(sal20[0]); v20 = pd.read_csv(sal20[1]); res20 = INF.resumen('TAGP'); txt20 = open(res20, encoding='utf-8').read()
+            man20 = INF.manifiesto('TAGP', {'salidas': [{'archivo': sal20[0]}]}); man20b = INF.manifiesto('TAGP', {'salidas': []})
+            doc20 = json.load(open(man20, encoding='utf-8'))
+        finally:
+            os.chdir(cwd20)
+    l20['censo_filas_y_tipos'] = bool(len(d20) == 7 and all(pd.api.types.is_numeric_dtype(d20[c]) for c in d20.columns if c.startswith(('oos_', 'r1_', 'f3_', 'd_'))))
+    l20['f3_porcentaje_a_numero'] = bool('f3_WR' in d20.columns and float(d20['f3_WR'].iloc[0]) == 55.0)
+    l20['sin_emojis_en_columnas'] = bool(all(c.isascii() for c in d20.columns))
+    _v20 = v20.sort_values(['Dir', 'Fold']); l20['vista_tope_y_orden'] = bool(len(v20) == 3 and list(_v20['Rank_F3']) == [2, 4, 7] and list(_v20['Estado']) == ['paso', 'descartado', 'paso'])
+    t20 = INF.tablas_resumen(d20); e20 = t20['embudo'].set_index(['simbolo', 'dir'])
+    l20['embudo_a_mano'] = bool(e20.loc[('XXXYYYm', 'LONG'), 'leidas'] == 4 and e20.loc[('XXXYYYm', 'LONG'), 'cae_2_ridge1'] == 1 and e20.loc[('XXXYYYm', 'LONG'), 'cae_6_compuerta_oos'] == 1
+                                and e20.loc[('XXXYYYm', 'LONG'), 'pasan'] == 2 and e20.loc[('XXXYYYm', 'SHORT'), 'cae_4_base_is'] == 1 and e20.loc[('TODOS', ''), 'pasan'] == 4
+                                and e20.loc[('TODOS', ''), 'en_cerebro'] == 2 and e20.loc[('TODOS', ''), 'recortadas_por_tope'] == 5)
+    q20 = t20['ridge2_todas'].set_index(['simbolo', 'dir']).loc[('TODOS', '')]; q20p = t20['ridge2_solo_las_que_pasaron'].set_index(['simbolo', 'dir']).loc[('TODOS', '')]
+    l20['ridge2_a_mano'] = bool(q20['con_OOS'] == 5 and q20['APORTA'] == 2 and q20['MIXTO'] == 1 and q20['NO_APORTA'] == 1 and q20['BASE_RECHAZADA'] == 1
+                                and abs(q20['d_pf_mediana'] - float(np.median([0.20, -0.10, -0.30, 0.20]))) < 1e-9 and q20p['con_OOS'] == 4 and q20p['NO_APORTA'] == 0)
+    l20['resumen_escrito'] = bool('## embudo' in txt20 and '## ridge2 todas' in txt20 and '## exportados' in txt20)
+    l20['manifiesto_acumula_y_sella'] = bool(len(doc20['corridas']) == 2 and len(doc20['corridas'][0]['salidas'][0].get('sha1', '')) == 40 and 'codigo_sha1' in doc20['corridas'][0])
+    n_err20 = sum(INF.ERRORES.values()); r_err20 = INF.fila_r('x', None)       # entrada inválida: no lanza, devuelve {} y cuenta el error
+    l20['error_contenido_y_contado'] = bool(r_err20 == {} and sum(INF.ERRORES.values()) == n_err20 + 1)
+    l20['fase4_no_importa_informes_con_censo_apagado'] = bool(not L.LAB_CENSO and not hasattr(L, 'INF'))
+    out['L20_informes_fase4'] = {
+        'detalle': l20, 'pasa': all(l20.values()),
+        'demuestra': 'lab_informes escribe una fila por candidato, clasifica Ridge 2 con la regla declarada, el resumen se recalcula desde el censo, la vista respeta el tope y un error del módulo no se propaga',
+        'no_demuestra': 'que cerebro y Reporte_OOS sean idénticos con y sin censo (eso se comprobó con una cadena sintética fuera del repo, ver bitácora V1.1); nada sobre datos reales'}
     out['todas_pasan'] = all(v['pasa'] for k, v in out.items() if isinstance(v, dict) and 'pasa' in v)
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:
         json.dump(out, fh, indent=1, ensure_ascii=False)

@@ -3,6 +3,22 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V8 V0.3 (2026-11-10) — INFORMES DE FASE 4 (rama lab-v8; `main` y lab-v7 intactos). Orden del CRO: "LUZ VERDE: INFORMES FASE 4 (censo, resumen, manifiesto)"
+#      más un archivo acotado para lectura directa. Requisito del CRO: informes auditables, trazables y utilizables por dos lectores (el CRO y el sistema).
+#      • Interruptor nuevo NEXUS_LAB_CENSO = 0 | 1 (defecto del código 0 = comportamiento anterior, sin archivos nuevos; el tablero lo pone en 1) y NEXUS_LAB_VISTA_TOP (defecto 50).
+#      • Con CENSO=1 se escriben, además de lo de siempre: Censo_Fase4_{tag}_{SIMBOLO}.csv (una fila por configuración LEÍDA, pase o no, con la etapa donde cayó y todo lo
+#        calculado hasta ahí: Ridge 1, base IS, Ridge 2, OOS con y sin Ridge 2), Vista_Fase4_{tag}_{SIMBOLO}.csv (primeras N por dirección y fold), Resumen_Fase4_{tag}.md y
+#        Manifiesto_Fase4_{tag}.json. La lógica de escritura vive en lab_informes.py; aquí solo se anotan valores que ya se calculaban (`cz`).
+#      • El censo se escribe aunque el símbolo quede 'sin_campeones' (es cuando más se necesita). No cambia entrenamiento, selección, compuerta, cerebro ni Reporte_OOS:
+#        la identidad byte a byte de esos dos archivos (código anterior vs CENSO=0 vs CENSO=1) se comprobó con una cadena sintética fuera del repo (ver LEEME_VM §6);
+#        L20 de lab_pruebas.py cubre el módulo lab_informes. `lab_eval_v7` agrega claves al diccionario `ex` solo con CENSO=1.
+#      • Blindaje: las funciones de lab_informes llamadas dentro del torneo no lanzan (devuelven vacío y cuentan el error en `errores_informes` del manifiesto);
+#        la escritura de censo, resumen y manifiesto va en try/except: un fallo de informes nunca descarta un candidato ni corta la corrida.
+#      • Datos por configuración: identidad y métricas de Fase 3 (f3_*), población de Ridge 1 (ml_*), R² OOF y T_min de la Cabeza B, constantes de Ridge 1, fotos y trades
+#        de Ridge 2, diagnóstico R2V_*, K, base IS, IS con Ridge 2, OOS sin y con Ridge 2 (13 métricas + Score_final, Score_v7, C1..C4, alfa, pips totales), retención,
+#        score de flujo, clave de selección, veredicto de Ridge 2 (APORTA = mejoran PF y mediana de pips en OOS), rango final, si entró al cerebro y segundos de cómputo.
+#      • Límite declarado: las configuraciones que caen antes del OOS no tienen números de OOS. No se agregó ninguna simulación. No hay comparación con/sin compuerta de Ridge 1.
+# ------------------------------------------------------------------------------
 # 📋 BITÁCORA LAB-V8 V0.2 (2026-11-09) — PARCHES H-AUD8-01 Y H-AUD8-02 (rama lab-v8; `main` y lab-v7 intactos). Orden del CRO: "Debemos corregir ambos hallazgos luz verde" + elección "Excluir ese trade".
 #      • H-AUD8-01 (`lab_escala_v`): con NEXUS_LAB_TAMANO = A | B, una decisión IS sin dato de actividad (NaN en las primeras 59 velas del archivo; solo posible en el fold 1)
 #        descartaba al candidato entero con `Lab_actividad_invalida`. Ahora esas decisiones se excluyen del ajuste (mediana `a_is_med` y Ridge de tamaño). La simulación no cambia:
@@ -370,6 +386,9 @@ LAB_NULO = os.environ.get('NEXUS_LAB_NULO', '0') == '1'
 # [LAB-V8] Vida v3 extendida: NEXUS_LAB_T = T (defecto, como lab-v7) | V3 (Cabeza B y ΔT con V3); NEXUS_LAB_VIDA = 3.0 (defecto) | 3.1 (parches H-V3-02/03)
 LAB_T = os.environ.get('NEXUS_LAB_T', 'T')
 LAB_VIDA = os.environ.get('NEXUS_LAB_VIDA', '3.0')
+LAB_CENSO = os.environ.get('NEXUS_LAB_CENSO', '0') == '1'            # [LAB-V8 informes] 1 = escribe censo, vista, resumen y manifiesto (0 = nada nuevo)
+LAB_VISTA_TOP = int(os.environ.get('NEXUS_LAB_VISTA_TOP', '') or 50)  # [LAB-V8 informes] filas por (dirección, fold) en la vista acotada
+if LAB_CENSO: import lab_informes as INF
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' = Score_final (main) | 'v7' = Score_v7 en la selección
 LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
 assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
@@ -406,6 +425,8 @@ def _registrar_descarte(simbolo, direccion, causa):
     with _lock_descartes:
         _descartes[clave] = _descartes.get(clave, 0) + 1
 
+_manif_simbolos = {}   # [LAB-V8 informes]
+_T_INICIO = __import__('datetime').datetime.now()
 _cobertura = {'ok': 0, 'sin_csv': [], 'sin_parquet': [], 'sin_campeones': [], 'sin_phantom': [], 'csv_invalido': []}
 _fallbacks_ridge = {'entrada': 0, 'superv': 0, 'T': 0}
 _lock_fallbacks = threading.Lock()
@@ -1705,16 +1726,18 @@ def lab_eval_v7(tup, dircode, O, H, L, pm, c, nt, sigma_sr, n_min, min_trades, s
     r[0] reemplazado por Score_v7; ex = {'sf': Score_final de los mismos trades, 'v7': Score_v7}."""
     mfe, mae, prof, tsc, ent, sal = tup
     r = np.array(eval_robustez_numba_v6(mfe, mae, prof, tsc, min_trades), dtype=np.float64)
-    sf = float(r[0]); n = len(prof); v7 = 0.0
+    sf = float(r[0]); n = len(prof); v7 = 0.0; _res_v7 = None
     if n >= 3:
         try:
             res = V7.score_v7(np.full(n, dircode, dtype=np.int64), ent, sal, prof.astype(np.float64), O, H, L, O, pm, c, nt=nt,
                               sigma_sr=sigma_sr, opcion=LAB_V7_OPCION, rng=np.random.default_rng(seed), R=LAB_V7_R, n_min=n_min)
-            v7 = float(res['score_v7'])
+            v7 = float(res['score_v7']); _res_v7 = res
         except ValueError:
             v7 = 0.0        # ventana más corta que la escala h (60 velas): sin puntaje
     r[0] = v7
-    return r, {'sf': sf, 'v7': v7}
+    ex = {'sf': sf, 'v7': v7}
+    if LAB_CENSO: ex.update(INF.extras_v7(prof, _res_v7))   # [LAB-V8 informes] componentes de Score_v7 y pips totales (ya calculados)
+    return r, ex
 
 
 def lab_escanear_k_v7(sim_ix, grid, dircode, O, H, L, pm, c, min_trades, seed):
@@ -1769,6 +1792,7 @@ def procesar_simbolo(SIMBOLO):
 
     SPREAD_ACTIVO = round(float(MATRIZ_SPREADS.get(SIMBOLO, SPREAD_FALLBACK)), DEC_SPREAD)
     reporte_torneo_local = []
+    censo_local = []   # [LAB-V8 informes]
 
     nombre_csv = PATRON_CSV_FASE3.format(simbolo=SIMBOLO)
     if not os.path.exists(nombre_csv):
@@ -1862,8 +1886,11 @@ def procesar_simbolo(SIMBOLO):
         top_n = df_candidatos.head(TOP_CANDIDATOS)
 
         def procesar_candidato(row_data):
+            cz = {'etapa': '1_preparacion'}   # [LAB-V8 informes] anotaciones del candidato para el censo (solo valores ya calculados)
+            if LAB_CENSO: cz['_t0'] = INF.reloj()
             def desc(causa):
                 _registrar_descarte(SIMBOLO, direccion_nombre, causa)
+                if LAB_CENSO: INF.registrar(censo_local, cz, row_data, SIMBOLO, direccion_nombre, 'descartado', causa)
                 return None
             try:
                 idx, row = row_data
@@ -1915,8 +1942,10 @@ def procesar_simbolo(SIMBOLO):
                 phantom_train = phantom_arr[start_train:end_train]
                 phantom_test = phantom_arr[start_test:end_test]
 
+                cz['etapa'] = '2_ridge1'
                 mat_train = extract_r_func(*S(start_train, end_train), phantom_train, PIPS_MULT, TRAIN_LEN, arm_in, chq_in, arm_out, chq_out, SPREAD_ACTIVO, *((True,) if LAB_T == 'V3' else ()))   # [LAB-V8] +3 columnas de Vida con NEXUS_LAB_T=V3
                 df_ml = pd.DataFrame(mat_train, columns=COLS_X_ENTRADA + ['Profit_Pips', 'MAE_Pips', 'MFE_Pips', 'Velas_Vida', 'T_Terminal', 'Idx_Decision'] + (['V3_FET', 'V3_PFONDO', 'V3_VFONDO'] if LAB_T == 'V3' else []))
+                if LAB_CENSO: cz.update(INF.datos_ml(df_ml))
                 # [LAB-V8] Vida v3 extendida: constantes de la población IS (operaciones del extractor de entrada); la Cabeza B aprende V3 terminal
                 V3P = None; H_VIDA = None
                 if LAB_USA_VIDA:
@@ -1936,11 +1965,13 @@ def procesar_simbolo(SIMBOLO):
                 if _GATE_T_ACTIVO:
                     W_T, B_T, T_min, r2_T, msg_T = entrenar_cabeza_T(df_ml)
                     if W_T is None: return desc(f"Cabeza_T:{msg_T}")
+                    cz['r1_r2_T'] = float(r2_T); cz['r1_T_min'] = float(T_min)
                     if r2_T <= 0.0: return desc("Cabeza_T_sin_habilidad_OOF")
                 else:
                     W_T = np.zeros(10, dtype=np.float64); B_T = 0.0; T_min = -1.0; r2_T = float('nan')
 
                 # [LAB-V7] escala de v_req (Ridge de tamaño) y gemelo nulo
+                cz.update(r1_med_v=float(med_v), r1_mad_v=float(mad_v), r1_atrac_t=float(atrac_t)); cz['etapa'] = '3_tamano'
                 rng_lab = np.random.default_rng(zlib.crc32(f"{SIMBOLO}|{direccion_nombre}|{idx}".encode()))
                 X10 = None
                 if LAB_TAMANO == 'A':
@@ -1970,12 +2001,17 @@ def procesar_simbolo(SIMBOLO):
                                            1, 0.0, min_tr, min_tr, seed_lab)
                     mfe, mae, prof, tsc = run_sim(a, b, phantom, activar_superv, W_S, B_S, K)
                     r = eval_robustez_numba_v6(mfe, mae, prof, tsc, min_tr)
-                    return r, {'sf': float(r[0]), 'v7': float('nan')}
+                    _e = {'sf': float(r[0]), 'v7': float('nan')}
+                    if LAB_CENSO: _e['pips'] = float(np.sum(prof))   # [LAB-V8 informes]
+                    return r, _e
 
                 w0 = np.zeros(10, dtype=np.float64)
 
+                cz['etapa'] = '4_base_is'
                 r_is_base, _ex_b_is = EVAL(start_train, end_train, phantom_train, False, w0, 0.0, 1.0, MIN_OPS_IS_LAB)
+                if LAB_CENSO: cz.update(INF.fila_r('is_base', r_is_base, _ex_b_is))
                 if r_is_base[0] <= 0 or int(r_is_base[10]) < MIN_OPS_IS_LAB: return desc("IS_base_no_robusto")
+                cz['etapa'] = '5_ridge2'
 
                 x_traj, y_target, prof_snap, mae_snap, mfe_snap, tsc_snap, tid_snap, vela_snap = ext_traj_func(
                     *S(start_train, end_train), phantom_train, PIPS_MULT, TRAIN_LEN,
@@ -1992,10 +2028,12 @@ def procesar_simbolo(SIMBOLO):
                     _cc = np.corrcoef(_VIDA['S'][_ult].T) if len(_ult) > 5 else np.eye(5)
                     _off = np.abs(_cc[~np.eye(5, dtype=bool)]); PAR_VIDA = {'r2': [float(v) for v in _r2], 'corr_max': float(np.nanmax(_off)) if _off.size else float('nan')}
                 else: PAR_VIDA = {}
+                if LAB_CENSO and PAR_VIDA: cz.update(INF.datos_vida(PAR_VIDA, VV.DESCRIPTORES))   # [LAB-V8 informes]
                 x_traj = x_traj[_m]; y_target = y_target[_m]; tid_snap = tid_snap[_m]
                 if len(x_traj) == 0: return desc("Trayectoria_vacia")
                 if LAB_NULO: y_target = rng_lab.permutation(y_target)      # [LAB-V7] gemelo nulo de Ridge 2
                 n_trades_train = int(np.unique(tid_snap).size)
+                cz['r2_n_fotos'] = int(len(x_traj)); cz['r2_n_trades'] = n_trades_train
 
                 W_S, B_S, msg_s = entrenar_modelo_supervivencia_ridge(x_traj, y_target, tid_snap, n_trades_train)
                 if msg_s != "OK": return desc(f"Ridge_superv:{msg_s}")
@@ -2012,10 +2050,13 @@ def procesar_simbolo(SIMBOLO):
                     _ex_is = {'sf': float(r_k_is[0]) if K_opt is not None else float('nan'), 'v7': float('nan')}
                 if K_opt is None: return desc("Escaneo_K_sin_score_positivo")
                 score_k_is = float(r_k_is[0])
+                if LAB_CENSO: cz['K_opt'] = float(K_opt); cz.update(INF.fila_r('is_sup', r_k_is, _ex_is))
 
                 r_s_oos, _ex_s_oos = EVAL(start_test, end_test, phantom_test, True, W_S, B_S, K_opt, MIN_OPS_OOS_EXPORT)
 
                 r_b_oos, _ex_b_oos = EVAL(start_test, end_test, phantom_test, False, w0, 0.0, 1.0, 3)
+                cz['etapa'] = '6_compuerta_oos'
+                if LAB_CENSO: cz.update(INF.fila_r('oos_sup', r_s_oos, _ex_s_oos)); cz.update(INF.fila_r('oos_base', r_b_oos, _ex_b_oos))
 
                 score_s_is = score_k_is
                 score_s_oos = float(r_s_oos[0])
@@ -2029,12 +2070,17 @@ def procesar_simbolo(SIMBOLO):
                 retencion = min(1.0, retencion_raw)
                 score_flujo = score_s_armonico * retencion
                 clave_rank = score_s_is if RANKEAR_SOLO_IS else score_flujo
+                if LAB_CENSO:   # [LAB-V8 informes] una fila por candidato que llegó al OOS, pase o no la compuerta
+                    _pasa = score_flujo > 0 and trades_superv >= MIN_OPS_OOS_EXPORT
+                    cz.update(retencion_raw=float(retencion_raw), retencion=float(retencion), score_armonico=float(score_s_armonico), score_flujo=float(score_flujo), clave_rank=float(clave_rank))
+                    INF.registrar(censo_local, cz, row_data, SIMBOLO, direccion_nombre, 'paso' if _pasa else 'descartado',
+                                  None if _pasa else ("Compuerta_OOS_trades_insuficientes" if trades_superv < MIN_OPS_OOS_EXPORT else "Compuerta_OOS_score_no_positivo"))
 
                 if score_flujo > 0 and trades_superv >= MIN_OPS_OOS_EXPORT:
                     return {
                         'row': row, 'TAM': PAR_TAM, 'VIDA': PAR_VIDA, 'V3P': V3P, 'W_R': W_R, 'B_R': B_R, 'med_v': med_v, 'mad_v': mad_v, 'atrac_t': atrac_t,
                         'W_S': W_S, 'B_S': B_S, 'K_opt': K_opt, 'ScoreK_IS': score_k_is,
-                        'ClaveRank': clave_rank,
+                        'ClaveRank': clave_rank, '_cz': cz,
                         'ScoreFlujo': score_flujo, 'Retencion': retencion * 100, 'Retencion_Raw': retencion_raw * 100,
                         'ScoreIS': score_s_is, 'WR_IS': r_k_is[6], 'MaxDD_IS': r_k_is[8],
                         'Med_T_IS': r_k_is[12], 'Med_T_IS_Base': r_is_base[12], 'Med_T_OOS': r_s_oos[12],
@@ -2076,6 +2122,24 @@ def procesar_simbolo(SIMBOLO):
             if s['n_eval']:
                 print(f"      📉 [H-10] {_d} Fold {f}: compuerta OOS {s['n_ok']}/{s['n_eval']} ({100.0 * s['n_ok'] / s['n_eval']:.1f}%) | mediana score OOS (todos) = {s['med_score_oos']:.2f}")
 
+    if LAB_CENSO:   # [LAB-V8 informes] censo y vista del símbolo (se escriben aunque no haya campeones)
+        try:
+            _exporta = bool(campeones_L and campeones_S)
+            for _camp in (campeones_L, campeones_S):
+                for _i, _c in enumerate(_camp): _c['_cz']['_fila'].update(rank_ia=_i + 1, en_cerebro=bool(_exporta and _i < EXPORTAR_MQL5_TOP))
+            _sal = INF.escribir_censo(SIMBOLO, TAG_ARCHIVOS, censo_local, TAB.sello(N_total), LAB_VISTA_TOP,
+                                      {'LONG': (len(df_long), min(len(df_long), TOP_CANDIDATOS)), 'SHORT': (len(df_short), min(len(df_short), TOP_CANDIDATOS))})
+            _cortes = {f'fold{_f}_{_n}': _v for _f, _t in GEOM['folds'].items() for _n, _v in zip(('is_ini', 'is_fin', 'oos_ini', 'oos_fin'), _t)}
+            if GEOM['reserva']: _cortes.update(reserva_ini=GEOM['reserva'][0], reserva_fin=GEOM['reserva'][1] - 1)
+            _manif_simbolos[SIMBOLO] = {'n_total': int(N_total), 'n_efectivo': int(N_velas), 'cortes_indice': {k: int(v) for k, v in _cortes.items()},
+                                        'cortes_fecha': INF.fechas_parquet(archivo_parquet, _cortes), 'spread': float(SPREAD_ACTIVO), 'exporta': _exporta,
+                                        'parquet': {'archivo': archivo_parquet, 'bytes': os.path.getsize(archivo_parquet)},
+                                        'csv_fase3': {'archivo': nombre_csv, 'sha1': INF.sha1_archivo(nombre_csv), 'filas': int(len(df_opt)),
+                                                      'busq_hash': (str(df_opt['Busq_Hash'].iloc[0]) if 'Busq_Hash' in df_opt.columns and len(df_opt) else None)},
+                                        'censo_filas': (_sal[2] if _sal else 0), 'campeones': {'LONG': len(campeones_L), 'SHORT': len(campeones_S)}}
+            if _sal: print(f"   🧾 [INFORMES] {_sal[0]} ({_sal[2]} filas) y {_sal[1]}")
+        except Exception as _e_inf:   # los informes nunca cortan la corrida: el fallo se cuenta y se muestra
+            INF.anotar_error('censo_simbolo', _e_inf); print(f"   ⚠️ [INFORMES] fallo en censo_simbolo: {type(_e_inf).__name__}: {_e_inf}")
     if not campeones_L or not campeones_S:
         print(f"   ⚠️ [{SIMBOLO}] Sin campeones en ambas direcciones (L={len(campeones_L)}, S={len(campeones_S)}). "
               f"No se escribe ningún artefacto; los exports previos permanecen intactos.")
@@ -2165,6 +2229,29 @@ def main():
             print(f"   - {clave}: {cnt}")
         print("=" * 80)
 
+    if LAB_CENSO:   # [LAB-V8 informes] resumen (desde los censos del disco) y manifiesto de la corrida
+        try:
+            import glob as _glob, datetime as _dt
+            _res = INF.resumen(TAG_ARCHIVOS)
+            _sals = [{'archivo': a} for pat in (f'Cerebro_MQL5_{TAG_ARCHIVOS}_*.txt', f'Reporte_OOS_Phase4_{TAG_ARCHIVOS}_Superv_*.csv', f'Censo_Fase4_{TAG_ARCHIVOS}_*.csv',
+                                                  f'Vista_Fase4_{TAG_ARCHIVOS}_*.csv', f'Resumen_Fase4_{TAG_ARCHIVOS}.md') for a in sorted(_glob.glob(pat))
+                     if any(a.endswith(f'_{s}.txt') or a.endswith(f'_{s}.csv') for s in _manif_simbolos) or a.endswith('.md')]
+            _man = INF.manifiesto(TAG_ARCHIVOS, {
+                'inicio': _T_INICIO.isoformat(timespec='seconds'), 'fin': _dt.datetime.now().isoformat(timespec='seconds'),
+                'fase4_version': FASE4_VERSION, 'core_version': FORMULAS_CORE_VERSION, 'tag': TAG_ARCHIVOS,
+                'tablero_lab': {k: v for k, v in sorted(os.environ.items()) if k.startswith('NEXUS_LAB_')},
+                'tablero_geometria': {'version': TAB.TABLERO_VERSION, 'hash': TAB.hash_params(), 'N_FOLDS': TAB.N_FOLDS, 'RATIO_TRAIN_TEST': TAB.RATIO_TRAIN_TEST,
+                                      'RESERVA_FINAL': TAB.RESERVA_FINAL, 'MEMORIA_FIFO': TAB.MEMORIA_FIFO},
+                'constantes': {'ESCALON': ESCALON, 'TOP_CANDIDATOS': TOP_CANDIDATOS, 'EXPORTAR_MQL5_TOP': EXPORTAR_MQL5_TOP, 'MIN_OPS_OOS_EXPORT': MIN_OPS_OOS_EXPORT,
+                               'MIN_OPS_IS_LAB': MIN_OPS_IS_LAB, 'RANKEAR_SOLO_IS': RANKEAR_SOLO_IS, 'Q_ADMISION_T': Q_ADMISION_T, 'INMUNIDAD_VELAS': INMUNIDAD_VELAS_EFECTIVA,
+                               'N_FEAT_SUPERV': N_FEAT_SUPERV, 'Z_MIN_LONG': Z_SCORE_MINIMO_LONG, 'Z_MIN_SHORT': Z_SCORE_MINIMO_SHORT, 'VISTA_TOP': LAB_VISTA_TOP,
+                               'LAB_V7_R': LAB_V7_R, 'LAB_V7_OPCION': LAB_V7_OPCION},
+                'simbolos_pedidos': list(LISTA_SIMBOLOS), 'simbolos': _manif_simbolos,
+                'cobertura': {k: (v if isinstance(v, int) else list(v)) for k, v in _cobertura.items()}, 'descartes': dict(_descartes),
+                'fallbacks_ridge': dict(_fallbacks_ridge), 'salidas': _sals})
+            print(f"🧾 [INFORMES] {_res} | {_man}")
+        except Exception as _e_inf:   # los informes nunca cortan la corrida: el fallo se cuenta y se muestra
+            INF.anotar_error('resumen_manifiesto', _e_inf); print(f"   ⚠️ [INFORMES] fallo en resumen_manifiesto: {type(_e_inf).__name__}: {_e_inf}")
     if _cobertura['ok'] == 0:
         raise RuntimeError(
             f"🛑 FATAL [Auditoría F4-08]: CERO símbolos de {len(LISTA_SIMBOLOS)} fueron procesados con éxito en esta corrida. "
