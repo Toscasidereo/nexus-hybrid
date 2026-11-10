@@ -3,6 +3,13 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V8 V0.2 (2026-11-09) — PARCHES H-AUD8-01 Y H-AUD8-02 (rama lab-v8; `main` y lab-v7 intactos). Orden del CRO: "Debemos corregir ambos hallazgos luz verde" + elección "Excluir ese trade".
+#      • H-AUD8-01 (`lab_escala_v`): con NEXUS_LAB_TAMANO = A | B, una decisión IS sin dato de actividad (NaN en las primeras 59 velas del archivo; solo posible en el fold 1)
+#        descartaba al candidato entero con `Lab_actividad_invalida`. Ahora esas decisiones se excluyen del ajuste (mediana `a_is_med` y Ridge de tamaño). La simulación no cambia:
+#        el kernel ya trataba el NaN como actividad relativa = `a_is_med`. Sin NaN en las decisiones, el resultado es idéntico bit a bit (prueba L19). Sigue inválido: todas NaN, o algún infinito.
+#      • H-AUD8-02 (`_bloque_mql5`): el bloque RANK #1 termina en salto de línea. Antes, con exactamente un campeón LONG, su última línea quedaba pegada a la cabecera del SHORT y
+#        Fase 4.5 A descartaba el motor LONG (`variable_ausente`). DESVIACIÓN respecto de main/lab-v7: el texto del cerebro gana un salto de línea por bloque RANK #1 (ningún valor cambia;
+#        para el compilador MQL5 es espacio en blanco). `Fase_4_V12_0.py` (main) conserva el defecto: requiere su propia luz verde. Prueba L18.
 # 📋 BITÁCORA LAB-V8 V0.1 (2026-11-07; cabecera añadida 2026-11-08, H-V8-01) — VIDA v3 EXTENDIDA A CABEZA B, ΔT VIVO Y KERNELS (rama lab-v8, sobre lab-v7 ff7ae24; `main` y lab-v7 intactos):
 #      Orden del CRO: "extender v3 ... luz verde". Las marcas `[LAB-V8]` del código (desde la importación de vida_v3) señalan cada cambio.
 #      • Interruptores nuevos: NEXUS_LAB_T = T (defecto, = lab-v7) | V3 (la Cabeza B aprende V3 terminal y ΔT = clip(V3_vivo − T_hat0)); NEXUS_LAB_VIDA = 3.0 (defecto) | 3.1;
@@ -1521,7 +1528,7 @@ def _bloque_mql5(c, export_idx, dir_nombre, cfg, ml, sv, emoji, umbral):
     M_in, R_in, P_in, B_in, A_in, arm_in, chq_in = parse_mql5_gatillo(row['⚖️ BASE IN'], row['📊 ACUM IN'], row['⚙️ Arm_IN'], row['⚡ Chq_IN'])
     M_out, R_out, P_out, B_out, A_out, arm_out, chq_out = parse_mql5_gatillo(row['⚖️ BASE OUT'], row['📊 ACUM OUT'], row['⚙️ Arm_OUT'], row['⚡ Chq_OUT'])
     prefix = "" if export_idx == 0 else f"\n      /* --- [OPCIONAL {dir_nombre} RANK #{export_idx+1}] ---\n"
-    suffix = "" if export_idx == 0 else "\n      */\n"
+    suffix = "\n" if export_idx == 0 else "\n      */\n"   # [LAB-V8 H-AUD8-02] el bloque RANK #1 termina en salto de línea (antes ""): su última línea ya no se pega a la cabecera del bloque siguiente
     wR = c['W_R']; bR = c['B_R']; wS = c['W_S']; bS = c['B_S']; kA = c['K_opt']
     
     # 🧠 Cabeza A de Ridge 1 (10 pesos canónicos)
@@ -1626,13 +1633,16 @@ def lab_escala_v(modo, nulo, rng, N_velas, ini_tr, fin_tr, ini_te, fin_te, df_ml
         return esc_total
     act_med0 = float(np.nanmedian(act_arr[ini_tr:fin_tr]))
     act_is = act_arr[ini_tr + df_ml['Idx_Decision'].values.astype(np.int64)]
-    if not (act_med0 > 0.0) or not np.isfinite(act_is).all():
+    # [LAB-V8 H-AUD8-01] Las decisiones sin dato de actividad (NaN: primeras ACT_VENTANA-1 velas del archivo) se EXCLUYEN del ajuste (mediana y Ridge de tamaño);
+    # antes una sola descartaba al candidato entero. Si todas tienen dato, `ok` es todo True y el resultado es idéntico bit a bit al anterior. Un infinito sigue siendo inválido.
+    ok = ~np.isnan(act_is)
+    if not (act_med0 > 0.0) or np.isinf(act_is).any() or not ok.any():
         raise ValueError("Lab_actividad_invalida")
     act_med = round(act_med0, DEC_W)
     if not (act_med > 0.0):
         raise ValueError("Lab_actividad_invalida")
     a_is = act_is / act_med
-    a_is_med = round(float(np.median(a_is)), DEC_W)
+    a_is_med = round(float(np.median(a_is[ok])), DEC_W)
     if not (a_is_med > 0.0):
         raise ValueError("Lab_actividad_invalida")
     act_w = np.ascontiguousarray(act_arr[ini_tr:fin_te], dtype=np.float64)
@@ -1640,9 +1650,9 @@ def lab_escala_v(modo, nulo, rng, N_velas, ini_tr, fin_tr, ini_te, fin_te, df_ml
     if modo == 'B':
         esc = _lab_esc_B_nb(act_w, act_med, a_is_med, ESCALA_MIN, ESCALA_MAX)
     else:
-        Xi = np.c_[df_ml[COLS_X_ENTRADA].values.astype(np.float64), a_is]
+        Xi = np.c_[df_ml[COLS_X_ENTRADA].values.astype(np.float64), a_is][ok]   # [LAB-V8 H-AUD8-01] solo decisiones con dato de actividad
         Xs_i, mu_i, sd_i = _estandarizar(Xi)
-        mod_m = RidgeCV(alphas=ALPHAS_RIDGE, cv=None); mod_m.fit(Xs_i, df_ml['MFE_Pips'].values.astype(np.float64))
+        mod_m = RidgeCV(alphas=ALPHAS_RIDGE, cv=None); mod_m.fit(Xs_i, df_ml['MFE_Pips'].values.astype(np.float64)[ok])
         med_pred = round(float(np.median(mod_m.predict(Xs_i))), DEC_W)
         if not (med_pred > 0.0):
             raise ValueError("Lab_MFE_mediana_no_positiva")

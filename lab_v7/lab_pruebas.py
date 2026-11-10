@@ -45,6 +45,7 @@
 # ==============================================================================
 #   V0.9 (2026-11-07, lab-v8): L9 con supervisión compara con main bit a bit en enteros (decisiones) y con tolerancia 1e-9 relativo en floats: la suma de t_pred es
 #       secuencial en el lab (H-EA-ULP, ≤1 ULP). Sin supervisión sigue bit a bit. L11 añade etiquetas _TV3/_VID31. L17: ida y vuelta lab_bloque_vida -> parse_vida.
+#   V1.0 (2026-11-09, lab-v8): L18 (H-AUD8-02: cerebro con un LONG y un SHORT se lee completo en 4.5 A) y L19 (H-AUD8-01: decisión sin dato de actividad se excluye del ajuste). Reglas escritas antes de correr.
 import os, sys, json, subprocess
 import numpy as np
 import pandas as pd
@@ -408,6 +409,60 @@ def main():
         l17[f'{sv17}_sin_V3P_vacio_y_parse_None'] = bool(L.lab_bloque_vida(sv17, None) == '' and L45.parse_vida('', sv17) is None)
     l17['lado_cruzado_no_se_lee'] = bool(L45.parse_vida(L.lab_bloque_vida('superv_toro', v3r17), 'superv_oso') is None)
     out['L17_bloque_vida_ida_y_vuelta'] = {'detalle': l17, 'pasa': all(l17.values())}
+
+    # L18 [LAB-V8 H-AUD8-02] cerebro con exactamente un campeón LONG y uno SHORT (texto de _bloque_mql5 unido como en la exportación): leer_cerebro (4.5 A) lee los DOS motores sin errores,
+    # con y sin bloque vida_*; ninguna línea mezcla una asignación con una cabecera RANK.
+    import tempfile
+    l18 = {}
+    def _c18(lado, v3p):
+        g18 = np.random.default_rng(5 if lado == 'LONG' else 6)
+        row = {'Fold': 1, 'Rank': 1, '⚖️ BASE IN': 'FPP_MID_60', '📊 ACUM IN': 'Z20_FPP_MID_60', '⚙️ Arm_IN': '35%', '⚡ Chq_IN': '70%',
+               '⚖️ BASE OUT': 'INT_V_FAST_30', '📊 ACUM OUT': 'Z30_INT_V_FAST_30', '⚙️ Arm_OUT': '40%', '⚡ Chq_OUT': '65%'}
+        return {'row': row, 'W_R': g18.normal(0, 1, 10), 'B_R': float(g18.normal()), 'W_S': g18.normal(0, 0.3, 10), 'B_S': float(g18.normal(0.4, 0.1)),
+                'K_opt': 0.31234, 'W_T': g18.normal(0, 1, 10), 'B_T': float(g18.normal()), 'T_min': 0.55, 'med_v': 0.7, 'mad_v': 0.4, 'atrac_t': 30.0,
+                'ClaveRank': 1.0, 'ScoreFlujo': 2.0, 'Med_T_OOS': 0.5, 'TAM': None, 'V3P': v3p}
+    for nom18, v3p18 in (('sin_vida', None), ('con_vida', v3r17)):
+        txt18 = (f"// ESCALON={L.ESCALON} | prueba L18\n// FID_VELOCIDAD_UNIFICADA = True\n\n    else if(sym == \"EURUSDm\") {{\n      g_pares[idx].spread_asumido_ia = 0.6000;\n\n"
+                 + L._bloque_mql5(_c18('LONG', v3p18), 0, 'LONG', 'toro', 'ml_toro', 'superv_toro', '🟢', 0.5)
+                 + L._bloque_mql5(_c18('SHORT', v3p18), 0, 'SHORT', 'oso', 'ml_oso', 'superv_oso', '🔴', 0.5)
+                 + "\n      g_pares[idx].cfg.configurado = true;\n    }\n")
+        with tempfile.TemporaryDirectory() as td18:
+            r18 = os.path.join(td18, 'cerebro.txt')
+            with open(r18, 'w', encoding='utf-8') as fh18: fh18.write(txt18)
+            _, mot18, err18 = L45.leer_cerebro(r18, tuple(range(1, 11)))
+        l18[f'{nom18}_dos_motores_sin_errores'] = bool(len(mot18) == 2 and len(err18) == 0)
+        l18[f'{nom18}_ninguna_linea_mezcla_asignacion_y_cabecera'] = bool(not any(('RANK #' in ln and 'g_pares[idx]' in ln) for ln in txt18.split('\n')))
+    out['L18_cerebro_un_LONG_un_SHORT_se_lee_completo'] = {
+        'detalle': l18, 'pasa': all(l18.values()),
+        'demuestra': 'con un campeón por dirección, Fase 4.5 A lee ambos motores del texto que escribe Fase 4 lab (con y sin Vida v3)',
+        'no_demuestra': 'que MetaEditor compile el archivo; ni el caso de main (Fase_4_V12_0.py conserva el defecto)'}
+
+    # L19 [LAB-V8 H-AUD8-01] lab_escala_v con UNA decisión IS sin dato de actividad: no lanza; la escala y los parámetros son IDÉNTICOS bit a bit a los de la misma tabla
+    # sin esa fila (excluir = no estar); todas sin dato o un infinito siguen siendo inválidos.
+    l19 = {}
+    g19 = np.random.default_rng(19); N19 = 4000; fT, fE = 2000, 3500
+    act19 = np.abs(g19.normal(30, 8, N19)); act19[:59] = np.nan
+    idec19 = np.sort(np.r_[39, g19.choice(np.arange(60, 1900), 149, replace=False)])
+    X19 = g19.normal(0, 1, (fE, 10))
+    df19 = pd.DataFrame(g19.normal(0, 1, (150, 10)), columns=L.COLS_X_ENTRADA)
+    df19['MFE_Pips'] = 8 + 2 * df19.iloc[:, 0] + np.abs(g19.normal(0, 1, 150)); df19['Idx_Decision'] = idec19
+    df19s = df19.iloc[1:].reset_index(drop=True)
+    for modo in ('A', 'B'):
+        pa, pb = {}, {}
+        ea = L.lab_escala_v(modo, False, np.random.default_rng(1), N19, 0, fT, fT, fE, df19, act19, X19 if modo == 'A' else None, pa)
+        eb = L.lab_escala_v(modo, False, np.random.default_rng(1), N19, 0, fT, fT, fE, df19s, act19, X19 if modo == 'A' else None, pb)
+        l19[f'{modo}_no_lanza_y_escala_finita_en_rango'] = bool(np.isfinite(ea).all() and ea.min() >= 0.25 and ea.max() <= 4.0)
+        l19[f'{modo}_escala_igual_a_tabla_sin_esa_fila'] = bool(np.array_equal(ea, eb))
+        l19[f'{modo}_parametros_iguales'] = bool(set(pa) == set(pb) and all(np.array_equal(np.asarray(pa[k]), np.asarray(pb[k])) for k in pa))
+        for nom19, act_m, df_m in (('todas_sin_dato', act19, df19.assign(Idx_Decision=np.arange(150) % 59)), ('infinito', np.where(np.arange(N19) == idec19[5], np.inf, act19), df19)):
+            try:
+                L.lab_escala_v(modo, False, np.random.default_rng(1), N19, 0, fT, fT, fE, df_m, act_m, X19 if modo == 'A' else None); l19[f'{modo}_{nom19}_sigue_invalido'] = False
+            except ValueError as e19:
+                l19[f'{modo}_{nom19}_sigue_invalido'] = bool(str(e19) == 'Lab_actividad_invalida')
+    out['L19_actividad_sin_dato_se_excluye_del_ajuste'] = {
+        'detalle': l19, 'pasa': all(l19.values()),
+        'demuestra': 'una decisión IS sin dato de actividad ya no descarta al candidato y equivale exactamente a no tener esa fila en el ajuste (modos A y B)',
+        'no_demuestra': 'que el tamaño A o B aporte; ni cuántas decisiones caen sin dato con datos reales'}
     out['todas_pasan'] = all(v['pasa'] for k, v in out.items() if isinstance(v, dict) and 'pasa' in v)
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:
         json.dump(out, fh, indent=1, ensure_ascii=False)

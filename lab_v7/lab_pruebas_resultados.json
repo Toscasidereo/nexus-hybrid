@@ -197,5 +197,33 @@
   },
   "pasa": true
  },
+ "L18_cerebro_un_LONG_un_SHORT_se_lee_completo": {
+  "detalle": {
+   "sin_vida_dos_motores_sin_errores": true,
+   "sin_vida_ninguna_linea_mezcla_asignacion_y_cabecera": true,
+   "con_vida_dos_motores_sin_errores": true,
+   "con_vida_ninguna_linea_mezcla_asignacion_y_cabecera": true
+  },
+  "pasa": true,
+  "demuestra": "con un campeón por dirección, Fase 4.5 A lee ambos motores del texto que escribe Fase 4 lab (con y sin Vida v3)",
+  "no_demuestra": "que MetaEditor compile el archivo; ni el caso de main (Fase_4_V12_0.py conserva el defecto)"
+ },
+ "L19_actividad_sin_dato_se_excluye_del_ajuste": {
+  "detalle": {
+   "A_no_lanza_y_escala_finita_en_rango": true,
+   "A_escala_igual_a_tabla_sin_esa_fila": true,
+   "A_parametros_iguales": true,
+   "A_todas_sin_dato_sigue_invalido": true,
+   "A_infinito_sigue_invalido": true,
+   "B_no_lanza_y_escala_finita_en_rango": true,
+   "B_escala_igual_a_tabla_sin_esa_fila": true,
+   "B_parametros_iguales": true,
+   "B_todas_sin_dato_sigue_invalido": true,
+   "B_infinito_sigue_invalido": true
+  },
+  "pasa": true,
+  "demuestra": "una decisión IS sin dato de actividad ya no descarta al candidato y equivale exactamente a no tener esa fila en el ajuste (modos A y B)",
+  "no_demuestra": "que el tamaño A o B aporte; ni cuántas decisiones caen sin dato con datos reales"
+ },
  "todas_pasan": true
 }
