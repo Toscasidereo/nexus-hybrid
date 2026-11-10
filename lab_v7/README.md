@@ -2,6 +2,12 @@
 
 > **Versiones.** Esta carpeta es la misma en las ramas `lab-v7` y `lab-v8`: la versión la dice la rama. En `lab-v8` se añaden las reformas de Vida v3 (ver `VERSIONES.md` para saber qué archivo es de cada versión y `ESPECIFICACION_VIDA_V3_EXT.md` para la extensión). El resto de este README describe lab-v7.
 
+> **Registros del proyecto (2026-11-10).** El estado de las ramas, los hallazgos abiertos, las decisiones del CRO y las lecciones viven fuera del repositorio, en el proyecto Auditoría: `claude/registro_trabajo_nexus_2026-11.md` (Registro de trabajo, solo-anexado) y `claude/registro_conocimiento_nexus_2026-11-07.md` (Registro de conocimiento, canónico). Leer el Registro de trabajo antes de tocar esta carpeta.
+
+> **Alcance de las pruebas de extremo a extremo (decisión del CRO, 2026-11-10).** Las corridas de punta a punta que se hacen fuera de la VM (datos sintéticos, un símbolo, pocos trials) **solo comprueban el flujo de trabajo**: que las fases encadenan, que los archivos se escriben y se leen, que los sellos y la paridad Fase 4 ↔ 4.5 A cierran. No dicen nada sobre rendimiento, alfa ni robustez. Ningún número de esas corridas es evidencia.
+
+> **lab-v7 se corre desde lab-v8 (decisión del CRO, 2026-11-10).** La rama `lab-v7` conserva los defectos H-AUD8-01 y H-AUD8-02 (corregidos en `lab-v8`, commit df69b3a). Para reproducir lab-v7 se usa esta rama con `NEXUS_LAB_T=T` y `NEXUS_LAB_VIDA=3.0` en el tablero (equivalencia: prueba N2 de `v8_pruebas.py`, sobre datos sintéticos).
+
 Rama `lab-v7`, creada desde `main` el 2026-11-01 por orden del CRO. **No se fusiona con `main`.** No modifica ningún archivo del laboratorio (`nexus_formulas_core.py`, `Fase_*.py`, EA). Todo el código vive en `lab_v7/`.
 
 Fórmulas: `claude/metricas_score_v7_propuesta.md` (sección 6) del proyecto Auditoría. Auditoría de la propuesta: `claude/auditoria_score_v7.md`.

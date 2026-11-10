@@ -20,10 +20,19 @@ Cómo saber en qué rama estás: `git branch --show-current`. Cómo ver solo lo 
 | EA gemelo y su chequeo con g++ | `EA_V12.01_LAB.txt` · `lab_compat_ea.py` · `lab_compat_ea_resultados.json` |
 | Pruebas | `lab_pruebas.py` · `lab_pruebas_resultados.json` |
 | Tablero y VM | `tablero_lab.env` · `correr_tablero.sh` · `verificar_vm.py` · `LEEME_VM.md` |
+| Documentos | `README.md` (notas iniciales) · `DEBATE_VIDA_V3.md` (solo formato de tablas: barras escapadas) |
 
 **Sin cambios respecto de lab-v7 (son de v7):**
-`Fase_3_lab.py` · `lab_escala.py` · `v7_metricas.py` · `v7_pruebas.py` · `v7_pruebas_resultados.json` · `vida_pruebas.py` · `vida_pruebas_resultados.json` · `correr_lab.sh` · `correr_f3_lab.sh` · `README.md` (salvo la nota inicial) · `ESPECIFICACION_VIDA_V3.md` · `DEBATE_VIDA_V3.md`
+`Fase_3_lab.py` · `lab_escala.py` · `v7_metricas.py` · `v7_pruebas.py` · `v7_pruebas_resultados.json` · `vida_pruebas.py` · `vida_pruebas_resultados.json` · `correr_lab.sh` · `correr_f3_lab.sh` · `ESPECIFICACION_VIDA_V3.md`
 
 Nota: Fase 3 no cambia en v8. Las reformas de v8 empiezan en Fase 4.
 
 *Medido con `git diff --name-status origin/lab-v7 origin/lab-v8` (2026-11-08). Esta lista es una instantánea: cuando una rama cambie, se actualiza o se regenera con ese comando.*
+
+## Cambios posteriores a la instantánea
+
+| Fecha | Commit | Qué cambió |
+|---|---|---|
+| 2026-11-09 | df69b3a | Parches H-AUD8-01 (`lab_escala_v` en `Fase_4_lab.py`: la decisión sin dato de actividad se excluye del ajuste) y H-AUD8-02 (`_bloque_mql5`: el bloque RANK #1 termina en salto de línea). Pruebas L18 y L19 en `lab_pruebas.py`. La rama `lab-v7` NO lleva estos parches. |
+| 2026-11-10 | (este commit) | Solo documentos: notas en `README.md` (registros, alcance de las pruebas de extremo a extremo, lab-v7 se corre desde lab-v8) y tablas de `DEBATE_VIDA_V3.md` con barras escapadas. Sin cambios de código. |
+

@@ -8,8 +8,8 @@ Cinco descriptores de la vida del trade, calculados en cada foto y al cierre (`p
 
 | # | Descriptor | Fórmula | Qué mide |
 |---|---|---|---|
-| 1 | Captura (EFR) | `(1 + p / (MFE + |MAE| + spread)) / 2` | Dónde está el profit dentro del recorrido |
-| 2 | Hundimiento (D_h) | `1 / (1 + |MAE| / h)` | Cuánto fue en contra, en horas típicas |
+| 1 | Captura (EFR) | `(1 + p / (MFE + \|MAE\| + spread)) / 2` | Dónde está el profit dentro del recorrido |
+| 2 | Hundimiento (D_h) | `1 / (1 + \|MAE\| / h)` | Cuánto fue en contra, en horas típicas |
 | 3 | Tiempo a favor (FET_v3) | fracción de fotos con `p > 0` desde la vela 2; 0.5 si `v ≤ 2` | Tiempo ganando |
 | 4 | Recuperación (REC) | `(p − p_fondo) / (velas desde el fondo · h/60)`; 0.5 si no hubo hundimiento mayor que el spread | Velocidad de recuperación |
 | 5 | Ritmo (RIT) | `p / (v · h/60)` | Ganancia por vela |
