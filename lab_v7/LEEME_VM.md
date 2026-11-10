@@ -51,6 +51,6 @@ Las constantes finas (rangos de Optuna, mínimos de operaciones, alphas, grilla 
 - Si Jupyter corre en un contenedor sin `bash`/`nohup`, avísame el mensaje de error.
 
 ## Notas lab-v8
-- Con NEXUS_LAB_T=T y NEXUS_LAB_VIDA=3.0 y CIERRE sin dV3, el lab reproduce lab-v7 (prueba N2).
+- Con NEXUS_LAB_T=T y NEXUS_LAB_VIDA=3.0 y CIERRE sin dV3, el lab usa las rutas de código de lab-v7. [Corrección 2026-11-10, H-DOC-01: aquí decía "prueba N2"; esa prueba no existe. Lo demostrado es: interruptores apagados == main bit a bit (L1) y la trayectoria sin v3p produce datos (N1). No hay una prueba que compare esta rama con la rama lab-v7 corrida con el mismo tablero; además, desde df69b3a esta rama difiere de lab-v7 a propósito en H-AUD8-01 y H-AUD8-02.]
 - Con T=V3, Fase 4 y 4.5 deben correr con el mismo T/VIDA: las etiquetas de archivo llevan `_TV3` / `_VID31` y 4.5 busca el cerebro con la misma etiqueta (si T/VIDA difieren, no lo encuentra).
 - Nada de V3 en Cabeza B/ΔT se ha corrido con datos reales: son hipótesis a decidir con corridas pareadas (T vs V3).

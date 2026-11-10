@@ -6,7 +6,7 @@
 
 > **Alcance de las pruebas de extremo a extremo (decisión del CRO, 2026-11-10).** Las corridas de punta a punta que se hacen fuera de la VM (datos sintéticos, un símbolo, pocos trials) **solo comprueban el flujo de trabajo**: que las fases encadenan, que los archivos se escriben y se leen, que los sellos y la paridad Fase 4 ↔ 4.5 A cierran. No dicen nada sobre rendimiento, alfa ni robustez. Ningún número de esas corridas es evidencia.
 
-> **lab-v7 se corre desde lab-v8 (decisión del CRO, 2026-11-10).** La rama `lab-v7` conserva los defectos H-AUD8-01 y H-AUD8-02 (corregidos en `lab-v8`, commit df69b3a). Para reproducir lab-v7 se usa esta rama con `NEXUS_LAB_T=T` y `NEXUS_LAB_VIDA=3.0` en el tablero (equivalencia: prueba N2 de `v8_pruebas.py`, sobre datos sintéticos).
+> **lab-v7 se corre desde lab-v8 (decisión del CRO, 2026-11-10).** La rama `lab-v7` conserva los defectos H-AUD8-01 y H-AUD8-02 (corregidos en `lab-v8`, commit df69b3a). Para reproducir lab-v7 se usa esta rama con `NEXUS_LAB_T=T` y `NEXUS_LAB_VIDA=3.0` en el tablero (equivalencia no demostrada por una prueba directa: ver la corrección H-DOC-01 en `LEEME_VM.md`).
 
 Rama `lab-v7`, creada desde `main` el 2026-11-01 por orden del CRO. **No se fusiona con `main`.** No modifica ningún archivo del laboratorio (`nexus_formulas_core.py`, `Fase_*.py`, EA). Todo el código vive en `lab_v7/`.
 
