@@ -19,6 +19,16 @@
 #     n_velas-1 (cierre forzado de fin de ventana).
 #     Límites declarados: N_t = trials completos (sobreestima los independientes: deflación conservadora); Close≈Open; los trials
 #     podados no entran en N_t; nada corrió sobre datos reales.
+#   V0.2 (2026-11-13) — PARCHE F3-V52 (LUZ VERDE del CRO, opción A: solo el puntaje; sin tope por par de señales).
+#     NEXUS_LAB_METRICA = v52: Optuna busca y el reporte ordena con el puntaje de Fase 3 V5.2 (eval_robustez_numba_v5):
+#       Sortino 35 (riesgo = pérdidas cerradas) · RF 25 (DD al cierre) · PF 20 · MFE/MAE 10 · WR 10, sin T(t).
+#       Piso IS = MIN_OPS_IS_REPORTE (200, sin cambio) y OOS = MIN_OPS_OOS_REPORTE (3, sin cambio); sin premio por volumen.
+#       Columnas descriptivas del reporte (PF, WR, RF, MaxDD, T(Life), RECHAZADO) siguen saliendo de eval_robustez_numba_v6;
+#       solo SCORE_TPE_IS (y el valor que maximiza Optuna) es el de V5.2. Filtros eliminatorios idénticos en ambos.
+#       Copia LITERAL del evaluador V5.2 (solo cambia el nombre); como ordena en el lugar sus entradas, se le pasan copias.
+#       CSV: Reporte_Fase3_WFO_V5.8_{SIMBOLO}_MV52.csv, columna Metrica_F3='v52', sello Busq_* con la métrica.
+#     Con METRICA = final | v7 nada cambia: _eval_busqueda devuelve eval_robustez_numba_v6 tal cual (prueba L21).
+#     Fase 4 lab todavía NO lee el CSV _MV52 (paso siguiente, fuera de este parche).
 # ==============================================================================
 # ==============================================================================
 # 📋 BITÁCORA V5.11 (TRAZABILIDAD DEL PRESUPUESTO DE BÚSQUEDA — REFACTORIZACION FASE_3_PARAMETROS, orden del CRO):
@@ -212,12 +222,90 @@ set_num_threads(1)
 
 # ---------------------------------------------------------------- LAB-V7: interruptores
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')
-assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
+assert LAB_METRICA in ('final', 'v7', 'v52'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
 LAB_V7 = (LAB_METRICA == 'v7')
+LAB_V52 = (LAB_METRICA == 'v52')   # [F3-V52] puntaje de Fase 3 V5.2
 LAB_MEDIR = int(os.environ.get('NEXUS_LAB_F3_MEDIR', '0'))
 assert LAB_MEDIR >= 0
 LAB_V7_OPCION = 'A'; LAB_V7_R = 20
-SUF_CSV_LAB = '_MV7' if LAB_V7 else ''
+SUF_CSV_LAB = '_MV7' if LAB_V7 else ('_MV52' if LAB_V52 else '')
+
+# ---------------------------------------------------------------- [F3-V52] evaluador de búsqueda
+# Copia LITERAL del evaluador de Fase3OptunaV5.2SQLite.ipynb (solo cambia el nombre). Ordena en el lugar sus entradas:
+# por eso _eval_busqueda le pasa COPIAS (los arreglos de la simulación no se tocan).
+@njit(cache=True, fastmath=True, boundscheck=False, nogil=True)   # solo Python (puntaje de búsqueda): fastmath permitido (§2.4)
+def eval_robustez_numba_v5_lab(mfe_lst, mae_lst, prof_lst, min_trades):
+    n = len(prof_lst)
+    if n < min_trades:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    sum_prof = 0.0; sum_neg_sq = 0.0; ganadores = 0
+    sum_ganancias = 0.0; perdedores_sum = 0.0
+    cum_equity = 0.0; peak = 0.0; max_dd = 0.0
+
+    for i in range(n):
+        p = prof_lst[i]
+        sum_prof += p
+        if p > 0:
+            ganadores += 1; sum_ganancias += p
+        else:
+            perdedores_sum += np.abs(p); sum_neg_sq += p * p
+        cum_equity += p
+        if cum_equity > peak: peak = cum_equity
+        dd = peak - cum_equity
+        if dd > max_dd: max_dd = dd
+
+    prof_lst.sort()
+    mfe_lst.sort()
+    mae_lst.sort()
+
+    if n % 2 == 1:
+        med_prof = prof_lst[n // 2]
+        med_mfe = mfe_lst[n // 2]
+        med_mae = mae_lst[n // 2]
+    else:
+        med_prof = (prof_lst[(n // 2) - 1] + prof_lst[n // 2]) / 2.0
+        med_mfe = (mfe_lst[(n // 2) - 1] + mfe_lst[n // 2]) / 2.0
+        med_mae = (mae_lst[(n // 2) - 1] + mae_lst[n // 2]) / 2.0
+
+    if med_prof <= 0.05 or sum_ganancias <= perdedores_sum or med_mfe <= 0.0:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    avg_prof = sum_prof / n
+    win_rate = (ganadores / n) * 100.0
+    pf = sum_ganancias / (perdedores_sum + 0.01)
+
+    efic = (med_prof / med_mfe) * 100.0
+    ratio_mfe_mae = med_mfe / (np.abs(med_mae) + 0.01)
+
+    downside_std = np.sqrt(sum_neg_sq / max(n, 1))
+    if downside_std < 0.01: downside_std = 0.01
+
+    sortino = avg_prof / downside_std
+
+    if max_dd > 0.0: rf = cum_equity / max_dd
+    elif max_dd == 0.0 and cum_equity > 0.0: rf = 8.0
+    else: rf = 0.0
+
+    s_sortino = min(max(sortino, 0.0) / 2.5, 1.0)
+    s_rf      = min(max(rf, 0.0) / 4.0, 1.0)
+    s_pf      = min(max(pf - 1.0, 0.0) / 1.0, 1.0)
+    s_mfe     = min(max(ratio_mfe_mae, 0.0) / 3.0, 1.0)
+    s_wr      = win_rate / 100.0
+
+    n_factor = min(np.sqrt(n) / np.sqrt(min_trades), 1.0)
+
+    score_base = (s_sortino * 35.0) + (s_rf * 25.0) + (s_pf * 20.0) + (s_mfe * 10.0) + (s_wr * 10.0)
+    score_final = score_base * n_factor
+
+    return score_final, med_mfe, med_mae, med_prof, efic, ratio_mfe_mae, win_rate, pf, max_dd, rf, n, sortino
+
+def _eval_busqueda(mfe, mae, prof, tsc, min_trades):
+    """[F3-V52] Evaluador de la búsqueda y del reporte. METRICA final|v7: eval_robustez_numba_v6 sin cambios.
+    METRICA v52: misma tupla de v6, con r[0] (el puntaje) reemplazado por el puntaje V5.2."""
+    r = eval_robustez_numba_v6(mfe, mae, prof, tsc, min_trades)
+    if not LAB_V52: return r
+    return (eval_robustez_numba_v5_lab(mfe.copy(), mae.copy(), prof.copy(), min_trades)[0],) + tuple(r[1:])
 
 t_global_start = time.perf_counter()
 print("🚀 [Fase 3 HPC V5.9] Iniciando Oráculo Causal Condicional (Expansión WFO Bayes Tree)...")
@@ -263,6 +351,7 @@ def sello_busqueda():
     """Columnas de trazabilidad del presupuesto de búsqueda (todas las filas del CSV llevan el mismo valor)."""
     _p = {'min_ops_is': MIN_OPS_IS_REPORTE, 'min_ops_oos': MIN_OPS_OOS_REPORTE, 'n_sim': N_SIMULACIONES,
           'startup': STARTUP_TRIALS, 'top': TOP_REPORTE, 'r_arm': list(RANGO_ARMADO), 'r_chq': list(RANGO_CHASQUIDO)}
+    if LAB_V52: _p['metrica'] = 'v52'   # [F3-V52] solo en v52: con final/v7 el hash queda igual que antes
     _h = hashlib.sha1(json.dumps(_p, sort_keys=True).encode('utf-8')).hexdigest()[:16]
     return {'Busq_Min_Ops_IS': MIN_OPS_IS_REPORTE, 'Busq_Min_Ops_OOS': MIN_OPS_OOS_REPORTE, 'Busq_N_Sim': N_SIMULACIONES,
             'Busq_Startup': STARTUP_TRIALS, 'Busq_Top': TOP_REPORTE, 'Busq_Hash': _h}
@@ -572,6 +661,7 @@ assert not np.isnan(_test_sat[-1]), "🚨 [REGRESIÓN C1] rolling_median_causal_
 _ = simular_motor_long_T(_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_dummy_pips_mult,100,0.5,0.1,0.5,0.1,_dummy_spread)
 _ = simular_motor_short_T(_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_dummy_pips_mult,100,0.5,0.1,0.5,0.1,_dummy_spread)
 _ = eval_robustez_numba_v6(_d32,_d32,_d32,_d32,5)
+_ = eval_robustez_numba_v5_lab(_d32.copy(),_d32.copy(),_d32.copy(),5)   # [F3-V52] compilación previa
 _ = simular_motor_long_T_ix(_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_dummy_pips_mult,100,0.5,0.1,0.5,0.1,_dummy_spread)
 _ = simular_motor_short_T_ix(_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_d32,_dummy_pips_mult,100,0.5,0.1,0.5,0.1,_dummy_spread)
 
@@ -826,7 +916,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 opens_train, highs_train, lows_train, phantom_train, PIPS_MULT, TRAIN_LEN, arm_in, chq_in, arm_out, chq_out, np.float32(SPREAD_ACTIVO)
             )
 
-            score, _, _, _, _, _, _, _, _, _, n_l, _, _ = eval_robustez_numba_v6(mfe_L, mae_L, prof_L, tscore_L, MIN_OPS_IS_REPORTE)
+            score, _, _, _, _, _, _, _, _, _, n_l, _, _ = _eval_busqueda(mfe_L, mae_L, prof_L, tscore_L, MIN_OPS_IS_REPORTE)
             if score <= 0.0 or n_l < MIN_OPS_IS_REPORTE: raise optuna.exceptions.TrialPruned()
             return score
 
@@ -908,7 +998,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 opens_train, highs_train, lows_train, phantom_train, PIPS_MULT, TRAIN_LEN, b_L['armado_in'], b_L['chasquido_in'], b_L['armado_out'], b_L['chasquido_out'], np.float32(SPREAD_ACTIVO)
             )
 
-            score_is, _, _, _, _, _, wr_is, pf_is, _, _, n_is, sort_is, mT_is = eval_robustez_numba_v6(mfe_L_is, mae_L_is, prof_L_is, tsc_is, MIN_OPS_IS_REPORTE)
+            score_is, _, _, _, _, _, wr_is, pf_is, _, _, n_is, sort_is, mT_is = _eval_busqueda(mfe_L_is, mae_L_is, prof_L_is, tsc_is, MIN_OPS_IS_REPORTE)
             if n_is < MIN_OPS_IS_REPORTE or score_is <= 0.0: continue
 
             mfe_L_oos, mae_L_oos, prof_L_oos, tsc_oos = simular_motor_long_T(
@@ -916,7 +1006,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 signos_test[:, idx_out], extremo_test[:, idx_out], sat_sup_test[:, idx_out], acum_test[:, idx_out],
                 opens_test, highs_test, lows_test, phantom_test, PIPS_MULT, TEST_LEN, b_L['armado_in'], b_L['chasquido_in'], b_L['armado_out'], b_L['chasquido_out'], np.float32(SPREAD_ACTIVO)
             )
-            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos = eval_robustez_numba_v6(mfe_L_oos, mae_L_oos, prof_L_oos, tsc_oos, MIN_OPS_OOS_REPORTE)
+            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos = _eval_busqueda(mfe_L_oos, mae_L_oos, prof_L_oos, tsc_oos, MIN_OPS_OOS_REPORTE)
 
             if score_oos == 0.0:
                 pf_oos_str = "RECHAZADO"; wr_oos_str = "RECHAZADO"; max_dd_oos_str = "RECHAZADO"; rf_oos_str = "RECHAZADO"; mT_oos_str = "RECHAZADO"
@@ -957,7 +1047,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 opens_train, highs_train, lows_train, phantom_train, PIPS_MULT, TRAIN_LEN, arm_in, chq_in, arm_out, chq_out, np.float32(SPREAD_ACTIVO)
             )
 
-            score, _, _, _, _, _, _, _, _, _, n_s, _, med_t = eval_robustez_numba_v6(mfe_S, mae_S, prof_S, tsc_S, MIN_OPS_IS_REPORTE)
+            score, _, _, _, _, _, _, _, _, _, n_s, _, med_t = _eval_busqueda(mfe_S, mae_S, prof_S, tsc_S, MIN_OPS_IS_REPORTE)
             if score <= 0.0 or n_s < MIN_OPS_IS_REPORTE : raise optuna.exceptions.TrialPruned()
             return score
 
@@ -1039,7 +1129,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 opens_train, highs_train, lows_train, phantom_train, PIPS_MULT, TRAIN_LEN, b_S['armado_in'], b_S['chasquido_in'], b_S['armado_out'], b_S['chasquido_out'], np.float32(SPREAD_ACTIVO)
             )
 
-            score_is, _, _, _, _, _, wr_is, pf_is, _, _, n_is, sort_is, mT_S = eval_robustez_numba_v6(mfe_S_is, mae_S_is, prof_S_is, tsc_is_s, MIN_OPS_IS_REPORTE)
+            score_is, _, _, _, _, _, wr_is, pf_is, _, _, n_is, sort_is, mT_S = _eval_busqueda(mfe_S_is, mae_S_is, prof_S_is, tsc_is_s, MIN_OPS_IS_REPORTE)
             if n_is < MIN_OPS_IS_REPORTE or score_is <= 0.0: continue
 
             mfe_S_oos, mae_S_oos, prof_S_oos, tsc_oos_s = simular_motor_short_T(
@@ -1047,7 +1137,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
                 signos_test[:, idx_out], extremo_test[:, idx_out], sat_inf_test[:, idx_out], acum_test[:, idx_out],
                 opens_test, highs_test, lows_test, phantom_test, PIPS_MULT, TEST_LEN, b_S['armado_in'], b_S['chasquido_in'], b_S['armado_out'], b_S['chasquido_out'], np.float32(SPREAD_ACTIVO)
             )
-            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos_S = eval_robustez_numba_v6(mfe_S_oos, mae_S_oos, prof_S_oos, tsc_oos_s, MIN_OPS_OOS_REPORTE)
+            score_oos, _, _, _, _, _, wr_oos, pf_oos, max_dd_oos, rf_oos, n_oos, sort_oos, mT_oos_S = _eval_busqueda(mfe_S_oos, mae_S_oos, prof_S_oos, tsc_oos_s, MIN_OPS_OOS_REPORTE)
 
             if score_oos == 0.0:
                 pf_oos_str = "RECHAZADO"; wr_oos_str = "RECHAZADO"; max_dd_oos_str = "RECHAZADO"; rf_oos_str = "RECHAZADO"; mT_oos_str = "RECHAZADO"
@@ -1078,6 +1168,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
         df_reporte = df_reporte.sort_values(by=['Fold', 'Dir', 'Rank'], ascending=[True, True, True])
         for _k, _v in TAB.sello(N_total).items(): df_reporte[_k] = _v   # [TABLERO] sello de trazabilidad (Fase 4 lo verifica)
         for _k, _v in sello_busqueda().items(): df_reporte[_k] = _v     # [V5.11] presupuesto de búsqueda (trazabilidad)
+        if LAB_V52: df_reporte['Metrica_F3'] = 'v52'   # [F3-V52] trazabilidad de la métrica de búsqueda
         # 🛡️ [CONTRATO DE COMPATIBILIDAD FASE 4] Se conserva la convención de
         # nombre 'Reporte_Fase3_WFO_V5.8_{SIMBOLO}.csv' requerida por el pipeline
         # de exportación de Fase 4 (Axioma 2: estabilidad de interfaces inter-fase).

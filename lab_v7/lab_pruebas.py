@@ -47,6 +47,10 @@
 #       secuencial en el lab (H-EA-ULP, ≤1 ULP). Sin supervisión sigue bit a bit. L11 añade etiquetas _TV3/_VID31. L17: ida y vuelta lab_bloque_vida -> parse_vida.
 #   V1.1 (2026-11-10, lab-v8): L20 (informes de Fase 4: censo, vista, resumen, manifiesto; módulo lab_informes). La identidad byte a byte de cerebro y Reporte_OOS con NEXUS_LAB_CENSO=0/1
 #        se comprobó con una cadena sintética de dos símbolos fuera del repo (no hay humo de extremo a extremo en el repo: H-AUD8-03).
+#   V1.2 (2026-11-13, lab-v8, PARCHE F3-V52): L16 admite además las líneas cuyo único cambio es `eval_robustez_numba_v6(mfe_` -> `_eval_busqueda(mfe_`
+#        (en final/v7 _eval_busqueda devuelve v6 tal cual; lo demuestra L21). L21: (a) final/v7 -> _eval_busqueda idéntico a v6 bit a bit;
+#        (b) _eval_busqueda en v52 da r[0] = evaluador original del notebook V5.2 (copia literal abajo) bit a bit; (c) no modifica las entradas;
+#        (d) v52 -> r[0] = puntaje V5.2 y r[1:] = v6; (e) los filtros eliminatorios coinciden (puntaje 0 en ambos a la vez). Reglas escritas antes de correr.
 #   V1.0 (2026-11-09, lab-v8): L18 (H-AUD8-02: cerebro con un LONG y un SHORT se lee completo en 4.5 A) y L19 (H-AUD8-01: decisión sin dato de actividad se excluye del ajuste). Reglas escritas antes de correr.
 import os, sys, json, subprocess
 import numpy as np
@@ -394,9 +398,46 @@ def main():
         "df_reporte.to_csv(nombre_temp, index=False, encoding='utf-8-sig')",
         "os.replace(nombre_temp, nombre_archivo) # Transacción O(1) a nivel de sistema de archivos"}
     quitadas = [l[1:].strip() for l in difflib.unified_diff(a3, b3, lineterm='', n=0) if l.startswith('-') and not l.startswith('---')]
+    b3_set = set(x.strip() for x in b3)   # [F3-V52] renombre del evaluador: la línea nueva debe existir tal cual en Fase_3_lab
+    renombradas = [l for l in quitadas if '= eval_robustez_numba_v6(mfe_' in l and l.replace('= eval_robustez_numba_v6(mfe_', '= _eval_busqueda(mfe_') in b3_set]
+    quitadas = [l for l in quitadas if l not in renombradas]
     no_perm = [l for l in quitadas if l not in permitidas]
-    l16 = {'solo_lineas_permitidas_modificadas': not no_perm, 'cantidad_modificadas': len(quitadas), 'no_permitidas': no_perm[:5]}
-    out['L16_Fase3_lab_defecto_igual_main'] = {'detalle': l16, 'pasa': bool(l16['solo_lineas_permitidas_modificadas'] and len(quitadas) <= len(permitidas))}
+    l16 = {'solo_lineas_permitidas_modificadas': not no_perm, 'cantidad_modificadas': len(quitadas), 'no_permitidas': no_perm[:5], 'renombre_evaluador_6_lineas': len(renombradas) == 6}
+    out['L16_Fase3_lab_defecto_igual_main'] = {'detalle': l16, 'pasa': bool(l16['solo_lineas_permitidas_modificadas'] and len(quitadas) <= len(permitidas) and l16['renombre_evaluador_6_lineas'])}
+
+    # L21 [F3-V52] evaluador de búsqueda: defecto = v6; v52 = puntaje del notebook V5.2
+    ini21 = txt3.index('@njit(cache=True, fastmath=True, boundscheck=False, nogil=True)   # solo Python (puntaje de búsqueda)')
+    fin21 = txt3.index('# ---------------------------------------------------------------- LAB-V7: interruptores') if False else txt3.index('\n\n', txt3.index('def _eval_busqueda('))
+    mod21 = ("import numpy as np\nfrom numba import njit\nfrom nexus_formulas_core import eval_robustez_numba_v6\nLAB_V52 = False\n\n"
+             + txt3[ini21:fin21] + "\n\n" + V52_ORIGINAL)
+    fk21 = os.path.join(dtmp, 'f3_eval_tmp.py'); open(fk21, 'w', encoding='utf-8').write(mod21)
+    spec21 = importlib.util.spec_from_file_location('f3_eval_tmp', fk21); E21 = importlib.util.module_from_spec(spec21); spec21.loader.exec_module(E21)
+    from nexus_formulas_core import eval_robustez_numba_v6 as V6
+    rng21 = np.random.default_rng(2113); l21 = {}; casos = []
+    for k in range(400):
+        n = int(rng21.integers(0, 600)); sesgo = rng21.uniform(-0.5, 1.5)
+        prof = (rng21.normal(sesgo, 8.0, n)).astype(np.float32); mfe = (np.abs(prof) + rng21.exponential(4.0, n)).astype(np.float32)
+        mae = (-rng21.exponential(4.0, n)).astype(np.float32); tsc = rng21.uniform(0, 1, n).astype(np.float32); mt = int(rng21.choice([3, 25, 200]))
+        casos.append((mfe, mae, prof, tsc, mt))
+    a_def = all(E21._eval_busqueda(*c) == V6(*c) for c in casos)
+    l21['a_defecto_igual_v6_bit_a_bit'] = bool(a_def)
+    ok_b = True; ok_c = True; ok_e = True; n_pos = 0
+    for (mfe, mae, prof, tsc, mt) in casos:
+        cp = [x.copy() for x in (mfe, mae, prof)]
+        E21.LAB_V52 = True; nuevo = E21._eval_busqueda(mfe, mae, prof, tsc, mt); E21.LAB_V52 = False
+        ok_c &= all(np.array_equal(x, y) for x, y in zip(cp, (mfe, mae, prof)))
+        viejo = E21.eval_robustez_numba_v5(cp[0].copy(), cp[1].copy(), cp[2].copy(), mt)
+        ok_b &= bool(nuevo[0] == viejo[0])
+        n_pos += nuevo[0] > 0
+        ok_e &= bool((nuevo[0] == 0.0) == (V6(mfe, mae, prof, tsc, mt)[0] == 0.0))
+    l21['b_v5_lab_igual_original_V52_bit_a_bit'] = bool(ok_b); l21['c_no_modifica_entradas'] = bool(ok_c); l21['e_filtros_coinciden'] = bool(ok_e)
+    l21['casos_con_puntaje_positivo'] = int(n_pos)
+    E21.LAB_V52 = True
+    ok_d = all((lambda r, v: r[0] == E21.eval_robustez_numba_v5_lab(c[0].copy(), c[1].copy(), c[2].copy(), c[4])[0] and tuple(r[1:]) == tuple(v[1:]))(E21._eval_busqueda(*c), V6(*c)) for c in casos)
+    l21['d_v52_r0_v52_resto_v6'] = bool(ok_d)
+    out['L21_F3_evaluador_v52'] = {'detalle': l21, 'pasa': bool(a_def and ok_b and ok_c and ok_d and ok_e and n_pos >= 50),
+        'demuestra': 'con METRICA final/v7 la búsqueda y el reporte usan exactamente v6; con v52 el puntaje es el del notebook V5.2 (copia literal) y el resto de columnas sale de v6',
+        'no_demuestra': 'cómo cambian las configuraciones elegidas con datos reales (eso lo mide la corrida H-F3-V52-01)'}
 
 
     # L17 [LAB-V8] ida y vuelta del bloque vida_*: lab_bloque_vida (Fase 4) -> parse_vida (4.5) exacto; sin V3P no hay bloque; el tag distingue T y VIDA
@@ -526,6 +567,10 @@ def main():
     with open(os.path.join(AQUI, 'lab_pruebas_resultados.json'), 'w', encoding='utf-8') as fh:
         json.dump(out, fh, indent=1, ensure_ascii=False)
     print(json.dumps(out, indent=1, ensure_ascii=False))
+
+
+# [F3-V52] Copia LITERAL del evaluador del notebook Fase3OptunaV5.2SQLite.ipynb (celda 1), solo para L21.
+V52_ORIGINAL = '@njit(cache=True, fastmath=True, boundscheck=False, nogil=True)\ndef eval_robustez_numba_v5(mfe_lst, mae_lst, prof_lst, min_trades):\n    n = len(prof_lst)\n    if n < min_trades:\n        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0\n\n    sum_prof = 0.0; sum_neg_sq = 0.0; ganadores = 0\n    sum_ganancias = 0.0; perdedores_sum = 0.0\n    cum_equity = 0.0; peak = 0.0; max_dd = 0.0\n\n    for i in range(n):\n        p = prof_lst[i]\n        sum_prof += p\n        if p > 0:\n            ganadores += 1; sum_ganancias += p\n        else:\n            perdedores_sum += np.abs(p); sum_neg_sq += p * p\n        cum_equity += p\n        if cum_equity > peak: peak = cum_equity\n        dd = peak - cum_equity\n        if dd > max_dd: max_dd = dd\n\n    prof_lst.sort()\n    mfe_lst.sort()\n    mae_lst.sort()\n\n    if n % 2 == 1:\n        med_prof = prof_lst[n // 2]\n        med_mfe = mfe_lst[n // 2]\n        med_mae = mae_lst[n // 2]\n    else:\n        med_prof = (prof_lst[(n // 2) - 1] + prof_lst[n // 2]) / 2.0\n        med_mfe = (mfe_lst[(n // 2) - 1] + mfe_lst[n // 2]) / 2.0\n        med_mae = (mae_lst[(n // 2) - 1] + mae_lst[n // 2]) / 2.0\n\n    if med_prof <= 0.05 or sum_ganancias <= perdedores_sum or med_mfe <= 0.0:\n        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0\n\n    avg_prof = sum_prof / n\n    win_rate = (ganadores / n) * 100.0\n    pf = sum_ganancias / (perdedores_sum + 0.01)\n\n    efic = (med_prof / med_mfe) * 100.0\n    ratio_mfe_mae = med_mfe / (np.abs(med_mae) + 0.01)\n\n    downside_std = np.sqrt(sum_neg_sq / max(n, 1))\n    if downside_std < 0.01: downside_std = 0.01\n\n    sortino = avg_prof / downside_std\n\n    if max_dd > 0.0: rf = cum_equity / max_dd\n    elif max_dd == 0.0 and cum_equity > 0.0: rf = 8.0\n    else: rf = 0.0\n\n    s_sortino = min(max(sortino, 0.0) / 2.5, 1.0)\n    s_rf      = min(max(rf, 0.0) / 4.0, 1.0)\n    s_pf      = min(max(pf - 1.0, 0.0) / 1.0, 1.0)\n    s_mfe     = min(max(ratio_mfe_mae, 0.0) / 3.0, 1.0)\n    s_wr      = win_rate / 100.0\n\n    n_factor = min(np.sqrt(n) / np.sqrt(min_trades), 1.0)\n\n    score_base = (s_sortino * 35.0) + (s_rf * 25.0) + (s_pf * 20.0) + (s_mfe * 10.0) + (s_wr * 10.0)\n    score_final = score_base * n_factor\n\n    return score_final, med_mfe, med_mae, med_prof, efic, ratio_mfe_mae, win_rate, pf, max_dd, rf, n, sortino\n'
 
 
 if __name__ == '__main__':

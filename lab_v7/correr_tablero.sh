@@ -13,7 +13,8 @@ MODO="${1:-todo}"; TABLERO="${2:-$RAIZ/lab_v7/tablero_lab.env}"
 [ -f "$TABLERO" ] || { echo "No existe el tablero: $TABLERO"; exit 2; }
 set -a; . "$TABLERO"; set +a
 export PYTHONPATH="$RAIZ:$RAIZ/lab_v7:${PYTHONPATH:-}"
-case "$NEXUS_LAB_METRICA" in final|v7) ;; *) echo "METRICA inválida"; exit 2;; esac
+case "$NEXUS_LAB_METRICA" in final|v7|v52) ;; *) echo "METRICA inválida"; exit 2;; esac
+if [ "$NEXUS_LAB_METRICA" = v52 ] && [ "$MODO" != f3 ]; then echo "METRICA=v52 solo con modo f3 (Fase 4 lab todavía no lee el CSV _MV52)"; exit 2; fi   # [F3-V52]
 case "$NEXUS_LAB_F3" in main|v7) ;; *) echo "F3 inválido"; exit 2;; esac
 case "$NEXUS_LAB_CIERRE" in T_terminal|dT_cont|G_pips|V3|dV3) ;; *) echo "CIERRE inválido"; exit 2;; esac
 NEXUS_LAB_T="${NEXUS_LAB_T:-T}"; NEXUS_LAB_VIDA="${NEXUS_LAB_VIDA:-3.0}"; export NEXUS_LAB_T NEXUS_LAB_VIDA   # [LAB-V8] defectos = lab-v7

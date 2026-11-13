@@ -183,9 +183,23 @@
   "detalle": {
    "solo_lineas_permitidas_modificadas": true,
    "cantidad_modificadas": 6,
-   "no_permitidas": []
+   "no_permitidas": [],
+   "renombre_evaluador_6_lineas": true
   },
   "pasa": true
+ },
+ "L21_F3_evaluador_v52": {
+  "detalle": {
+   "a_defecto_igual_v6_bit_a_bit": true,
+   "b_v5_lab_igual_original_V52_bit_a_bit": true,
+   "c_no_modifica_entradas": true,
+   "e_filtros_coinciden": true,
+   "casos_con_puntaje_positivo": 216,
+   "d_v52_r0_v52_resto_v6": true
+  },
+  "pasa": true,
+  "demuestra": "con METRICA final/v7 la búsqueda y el reporte usan exactamente v6; con v52 el puntaje es el del notebook V5.2 (copia literal) y el resto de columnas sale de v6",
+  "no_demuestra": "cómo cambian las configuraciones elegidas con datos reales (eso lo mide la corrida H-F3-V52-01)"
  },
  "L17_bloque_vida_ida_y_vuelta": {
   "detalle": {
