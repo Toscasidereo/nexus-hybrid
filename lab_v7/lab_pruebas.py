@@ -51,6 +51,9 @@
 #        (en final/v7 _eval_busqueda devuelve v6 tal cual; lo demuestra L21). L21: (a) final/v7 -> _eval_busqueda idéntico a v6 bit a bit;
 #        (b) _eval_busqueda en v52 da r[0] = evaluador original del notebook V5.2 (copia literal abajo) bit a bit; (c) no modifica las entradas;
 #        (d) v52 -> r[0] = puntaje V5.2 y r[1:] = v6; (e) los filtros eliminatorios coinciden (puntaje 0 en ambos a la vez). Reglas escritas antes de correr.
+#   V1.3 (2026-11-13, lab-v8, CENSO-F3 + JUEZ-V52): L22 (censo de Fase 3: solo lee la base, se llena solo con NEXUS_LAB_F3_CENSO=1 fuera de medición).
+#        L23 (Fase 4 con METRICA=v52: bloque V5.2 idéntico al de Fase 3; r[0] = V5.2 y r[1:] = v6 bit a bit; extras sf/v52; escaneo de K por máximo V5.2;
+#        escaneo por defecto sin cambios; patrón _MV52; guarda de Metrica_F3). Reglas escritas antes de correr.
 #   V1.0 (2026-11-09, lab-v8): L18 (H-AUD8-02: cerebro con un LONG y un SHORT se lee completo en 4.5 A) y L19 (H-AUD8-01: decisión sin dato de actividad se excluye del ajuste). Reglas escritas antes de correr.
 import os, sys, json, subprocess
 import numpy as np
@@ -439,6 +442,61 @@ def main():
         'demuestra': 'con METRICA final/v7 la búsqueda y el reporte usan exactamente v6; con v52 el puntaje es el del notebook V5.2 (copia literal) y el resto de columnas sale de v6',
         'no_demuestra': 'cómo cambian las configuraciones elegidas con datos reales (eso lo mide la corrida H-F3-V52-01)'}
 
+
+    # L22 [CENSO-F3] (estática; la prueba funcional es la cadena sintética de la bitácora V1.3)
+    l22 = {}
+    ini22 = txt3.index('        def _lab_censo(study, dir_, fold):'); fin22 = txt3.index('\n\n', ini22)
+    cuerpo22 = txt3[ini22:fin22]
+    l22['a_censo_solo_lee_la_base'] = all(x not in cuerpo22 for x in ('.optimize(', 'set_user_attr', 'create_study', 'tell(', 'os.remove'))
+    l22['b_censo_lee_todas_las_pruebas'] = 'study.get_trials(deepcopy=False)' in cuerpo22 and 'states=' not in cuerpo22
+    l22['c_relleno_solo_con_interruptor'] = txt3.count('censo_f3.extend(') == 2 and txt3.count("if LAB_F3_CENSO and not LAB_MEDIR: censo_f3.extend(") == 2
+    l22['d_defecto_apagado'] = "os.environ.get('NEXUS_LAB_F3_CENSO', '0')" in txt3
+    l22['e_escritura_solo_si_hay_filas'] = '    if censo_f3:   # [CENSO-F3]' in txt3 and txt3.count('nombre_censo = f"Censo_Fase3_') == 1   # (corregida: la 1.ª versión contaba también la bitácora)
+    out['L22_F3_censo'] = {'detalle': l22, 'pasa': all(l22.values()),
+        'demuestra': 'el censo solo lee la base de Optuna, se llena únicamente con NEXUS_LAB_F3_CENSO=1 fuera del modo medición y no cambia la búsqueda (L16 cubre la ruta por defecto)',
+        'no_demuestra': 'el contenido del censo con datos reales; la corrida sintética de extremo a extremo se registra aparte'}
+
+    # L23 [JUEZ-V52] Fase 4: evaluador V5.2 idéntico al de Fase 3; r[0] = V5.2, r[1:] = v6; escaneo de K por V5.2; defecto sin cambios
+    txt4 = open(os.path.join(RAIZ, 'lab_v7', 'Fase_4_lab.py'), encoding='utf-8').read(); l23 = {}
+    marca = '@njit(cache=True, fastmath=True, boundscheck=False, nogil=True)   # solo Python (puntaje de búsqueda)'
+    b3 = txt3[txt3.index(marca):txt3.index('\ndef _eval_busqueda(')].rstrip('\n')
+    i4 = txt4.index(marca); b4 = txt4[i4:txt4.index('\ndef lab_v52_r(')].rstrip('\n')
+    l23['a_bloque_v52_identico_F3_F4'] = (b3 == b4)
+    fin23 = txt4.index('\ndef escanear_umbral_k(')
+    fin23b = txt4.index('\n\n', txt4.index('def escanear_umbral_k('))
+    mod23 = ("import numpy as np\nfrom numba import njit\nfrom nexus_formulas_core import eval_robustez_numba_v6\n\n"
+             + txt4[i4:fin23] + txt4[fin23:fin23b] + "\n\n" + V52_ORIGINAL)
+    fk23 = os.path.join(dtmp, 'f4_v52_tmp.py'); open(fk23, 'w', encoding='utf-8').write(mod23)
+    spec23 = importlib.util.spec_from_file_location('f4_v52_tmp', fk23); E23 = importlib.util.module_from_spec(spec23); spec23.loader.exec_module(E23)
+    ok_b = ok_c = ok_sf = True
+    for (mfe, mae, prof, tsc, mt) in casos:
+        cp = [x.copy() for x in (mfe, mae, prof)]
+        r, ex = E23.lab_v52_r(mfe, mae, prof, tsc, mt); v6 = V6(mfe, mae, prof, tsc, mt)
+        ok_c &= all(np.array_equal(x, y) for x, y in zip(cp, (mfe, mae, prof)))
+        ok_b &= bool(r[0] == E23.eval_robustez_numba_v5(cp[0].copy(), cp[1].copy(), cp[2].copy(), mt)[0] and tuple(r[1:]) == tuple(v6[1:]))
+        ok_sf &= bool(ex['sf'] == v6[0] and ex['v52'] == r[0])
+    l23['b_r0_v52_resto_v6_bit_a_bit'] = bool(ok_b); l23['c_no_modifica_entradas'] = bool(ok_c); l23['d_extras_sf_y_v52'] = bool(ok_sf)
+    tabla = {float(k): casos[k] for k in range(40)}
+    sim = lambda act, ws, bs, K: tuple(x.copy() for x in tabla[K][:4])
+    k52, r52, _ = E23.lab_escanear_k_v52(sim, None, None, list(tabla), 3)
+    sc52 = {K: E23.eval_robustez_numba_v5(*(x.copy() for x in tabla[K][:3]), 3)[0] for K in tabla}
+    l23['e_escaneo_k_elige_max_v52'] = (k52 is None and max(sc52.values()) <= 0) or (k52 is not None and sc52[k52] == max(sc52.values()) > 0)
+    k6, r6 = E23.escanear_umbral_k(sim, None, None, list(tabla), 3)
+    sc6 = {K: V6(*tabla[K][:4], 3)[0] for K in tabla}
+    l23['f_escaneo_k_defecto_sin_cambios'] = (k6 is None and max(sc6.values()) <= 0) or (k6 is not None and sc6[k6] == max(sc6.values()))
+    env_bak = os.environ.get('NEXUS_LAB_F3')
+    pat = {}
+    for f3 in ('main', 'v7', 'v52'):
+        os.environ['NEXUS_LAB_F3'] = f3
+        lin = [l for l in txt4.splitlines() if l.startswith('PATRON_CSV_FASE3 = ')][0]
+        ns = {'os': os}; exec(lin, ns); pat[f3] = ns['PATRON_CSV_FASE3']
+    if env_bak is None: os.environ.pop('NEXUS_LAB_F3', None)
+    else: os.environ['NEXUS_LAB_F3'] = env_bak
+    l23['g_patron_csv'] = pat == {'main': 'Reporte_Fase3_WFO_V5.8_{simbolo}.csv', 'v7': 'Reporte_Fase3_WFO_V5.8_{simbolo}_MV7.csv', 'v52': 'Reporte_Fase3_WFO_V5.8_{simbolo}_MV52.csv'}
+    l23['h_guarda_metrica_csv'] = "CSV_Fase3_metrica_no_v52" in txt4
+    out['L23_F4_juez_v52'] = {'detalle': l23, 'pasa': all(bool(v) for v in l23.values()),
+        'demuestra': 'Fase 4 usa en v52 la misma copia literal de V5.2 que Fase 3 (r[0]) con el resto de r de v6; el escaneo de K elige el máximo V5.2; el escaneo por defecto no cambia; lee el CSV _MV52 y exige Metrica_F3=v52',
+        'no_demuestra': 'el resultado de Fase 4 con datos reales; Fase 4.5 no está adaptada (el corredor no la corre con v52)'}
 
     # L17 [LAB-V8] ida y vuelta del bloque vida_*: lab_bloque_vida (Fase 4) -> parse_vida (4.5) exacto; sin V3P no hay bloque; el tag distingue T y VIDA
     l17 = {}

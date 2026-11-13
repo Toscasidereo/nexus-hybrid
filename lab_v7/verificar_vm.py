@@ -2,6 +2,7 @@
 # NEXUS LAB-V7 — VERIFICADOR PREVIO PARA LA VM (solo lectura). Uso: python lab_v7/verificar_vm.py [carpeta_de_trabajo]
 # Bitácora V0.1 (2026-11-06): creación. Orden del CRO: "dejar listos los tableros y configuraciones".
 # Bitácora V0.3 (2026-11-10, lab-v8): acepta NEXUS_LAB_CENSO (0|1), muestra NEXUS_LAB_VISTA_TOP y exige lab_informes.py (informes de Fase 4).
+# Bitácora V0.4 (2026-11-13, lab-v8): NEXUS_LAB_F3 acepta v52 (CSV _MV52); NEXUS_LAB_F3_CENSO (0|1, opcional). METRICA v52 ya venía de F3-V52.
 # Comprueba: versión de Python y paquetes, módulos del repo, tablero de geometría, tablero_lab.env, parquets y CSV por símbolo,
 # RAM/CPU/disco. Sale con código 1 si algo bloquea. No ejecuta ninguna fase.
 # ==============================================================================
@@ -35,8 +36,9 @@ cfg = {}
 for l in open(os.path.join(AQUI, 'tablero_lab.env'), encoding='utf-8'):
     l = l.strip()
     if l and not l.startswith('#') and '=' in l: k, _, val = l.partition('='); cfg[k] = val.strip()
-perm = {'NEXUS_LAB_METRICA': ('final', 'v7', 'v52'), 'NEXUS_LAB_F3': ('main', 'v7'), 'NEXUS_LAB_CIERRE': ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), 'NEXUS_LAB_T': ('T', 'V3'), 'NEXUS_LAB_VIDA': ('3.0', '3.1'),
-        'NEXUS_LAB_TAMANO': ('off', 'A', 'B'), 'NEXUS_LAB_NULO': ('0', '1'), 'NEXUS_LAB_CENSO': ('0', '1')}
+perm = {'NEXUS_LAB_METRICA': ('final', 'v7', 'v52'), 'NEXUS_LAB_F3': ('main', 'v7', 'v52'), 'NEXUS_LAB_CIERRE': ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), 'NEXUS_LAB_T': ('T', 'V3'), 'NEXUS_LAB_VIDA': ('3.0', '3.1'),
+        'NEXUS_LAB_TAMANO': ('off', 'A', 'B'), 'NEXUS_LAB_NULO': ('0', '1'), 'NEXUS_LAB_CENSO': ('0', '1'),
+        'NEXUS_LAB_F3_CENSO': ('0', '1', None)}   # [CENSO-F3] None = tablero anterior sin la línea (defecto 0)
 for k, p in perm.items(): (ok if cfg.get(k) in p else no)(f'{k}={cfg.get(k)!r} (permitidos {p})')
 for k in ('NEXUS_LAB_SIMBOLOS', 'NEXUS_LAB_N_SIM', 'NEXUS_LAB_STARTUP', 'NEXUS_LAB_F3_MEDIR', 'NEXUS_LAB_VISTA_TOP'): ok(f'{k}={cfg.get(k)!r}')
 if cfg.get('NEXUS_LAB_NULO') == '1' and cfg.get('NEXUS_LAB_TAMANO') != 'off': no('NULO=1 con TAMANO distinto de off no es exportable')
@@ -44,7 +46,7 @@ print(f'5. Datos en la carpeta de trabajo: {TRABAJO}')
 simb = [s.strip() for s in cfg.get('NEXUS_LAB_SIMBOLOS', '').split(',') if s.strip()]
 if not simb:
     m = re.search(r"LISTA_SIMBOLOS\s*=\s*\[(.*?)\]", open(os.path.join(AQUI, 'Fase_4_lab.py'), encoding='utf-8').read(), re.S); simb = re.findall(r"'(\w+)'", m.group(1))
-sfx = '_MV7' if cfg.get('NEXUS_LAB_F3') == 'v7' else ''
+sfx = {'v7': '_MV7', 'v52': '_MV52'}.get(cfg.get('NEXUS_LAB_F3'), '')   # [JUEZ-V52]
 faltan_pq = [s for s in simb if not os.path.isfile(os.path.join(TRABAJO, f'nexus_df_salida_3D_{s}_MultiZ.parquet'))]
 (ok if not faltan_pq else no)(f'parquets de Fase 1&2: {len(simb) - len(faltan_pq)}/{len(simb)}' + (f' | faltan {faltan_pq[:5]}' if faltan_pq else ''))
 faltan_csv = [s for s in simb if not os.path.isfile(os.path.join(TRABAJO, f'Reporte_Fase3_WFO_V5.8_{s}{sfx}.csv'))]

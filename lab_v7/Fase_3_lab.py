@@ -29,6 +29,14 @@
 #       CSV: Reporte_Fase3_WFO_V5.8_{SIMBOLO}_MV52.csv, columna Metrica_F3='v52', sello Busq_* con la métrica.
 #     Con METRICA = final | v7 nada cambia: _eval_busqueda devuelve eval_robustez_numba_v6 tal cual (prueba L21).
 #     Fase 4 lab todavía NO lee el CSV _MV52 (paso siguiente, fuera de este parche).
+#   V0.3 (2026-11-13) — CENSO-F3 + JUEZ-V52 (orden del CRO: "apliquemos los cambios solo en fase 3 y 4", rama lab-v8).
+#     NEXUS_LAB_F3_CENSO = 0 (defecto: nada cambia) | 1: antes de borrar la base de Optuna de cada (fold, dirección) se guardan TODAS las
+#       pruebas en Censo_Fase3_{SIMBOLO}{sufijo}.csv.gz: número, estado (COMPLETE/PRUNED/FAIL), Azar (número < STARTUP_TRIALS: aproximado,
+#       el TPE cuenta todas las pruebas del estudio), parámetros, señales IN/OUT, armado/chasquido y el valor que vio Optuna. Para las
+#       completas se vuelve a simular IS (motor estándar) y se agregan Ops_IS, Pips_IS, PF_IS, WR_IS, SF_IS (v6) y V52_IS. Las podadas
+#       quedan sin Ops_IS (guardarlo exigiría una escritura más por prueba en la base, lo más caro de Fase 3: H-F3-COSTO-01).
+#       El censo es para lectura del CRO y del sistema: Fase 4 no lo lee. No se escribe en modo medición.
+#     H-V52-09: en modo medición (_lab_obj) el puntaje de la prueba pasa por _eval_busqueda (antes v6 directo); con final/v7 no cambia nada.
 # ==============================================================================
 # ==============================================================================
 # 📋 BITÁCORA V5.11 (TRAZABILIDAD DEL PRESUPUESTO DE BÚSQUEDA — REFACTORIZACION FASE_3_PARAMETROS, orden del CRO):
@@ -226,6 +234,9 @@ assert LAB_METRICA in ('final', 'v7', 'v52'), f"NEXUS_LAB_METRICA invalido: {LAB
 LAB_V7 = (LAB_METRICA == 'v7')
 LAB_V52 = (LAB_METRICA == 'v52')   # [F3-V52] puntaje de Fase 3 V5.2
 LAB_MEDIR = int(os.environ.get('NEXUS_LAB_F3_MEDIR', '0'))
+LAB_F3_CENSO = os.environ.get('NEXUS_LAB_F3_CENSO', '0')   # [CENSO-F3] 0 = sin censo (defecto) | 1 = censo de todas las pruebas
+assert LAB_F3_CENSO in ('0', '1'), f"NEXUS_LAB_F3_CENSO invalido: {LAB_F3_CENSO}"
+LAB_F3_CENSO = (LAB_F3_CENSO == '1')
 assert LAB_MEDIR >= 0
 LAB_V7_OPCION = 'A'; LAB_V7_R = 20
 SUF_CSV_LAB = '_MV7' if LAB_V7 else ('_MV52' if LAB_V52 else '')
@@ -785,6 +796,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
     acum_2d = np.array(np.column_stack(acum_list), order='F'); ciclos_id_2d = np.array(np.column_stack(ciclos_id_list), order='F', dtype=np.int32)
     
     del signos_list, extremo_list, acum_list, ciclos_id_list, df_map; gc.collect()
+    censo_f3 = []   # [CENSO-F3]
     resultados_optuna = []
 
     for fold in range(1 if LAB_MEDIR else N_FOLDS):
@@ -836,7 +848,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
             t0 = time.perf_counter()
             tup = _lab_sim_ix(dir_, idx_in, idx_out, 'is', arm_in, chq_in, arm_out, chq_out)
             t1 = time.perf_counter(); n = len(tup[2])
-            sf = eval_robustez_numba_v6(*tup[:4], MIN_OPS_IS_REPORTE) if LAB_MEDIR else None
+            sf = _eval_busqueda(*tup[:4], MIN_OPS_IS_REPORTE) if LAB_MEDIR else None   # [H-V52-09] antes v6 directo; final/v7 = idéntico
             t2 = time.perf_counter()
             r7 = lab_v7_eval(tup, 1 if dir_ == 'L' else -1, W_TRAIN, C_SPREAD, PM_F, 0, 1, 0.0, MIN_OPS_IS_REPORTE, 0) if (LAB_V7 or LAB_MEDIR) else None
             t3 = time.perf_counter()
@@ -900,6 +912,36 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
             metrica_raw = params[f'metrica_{sufijo}_{familia}']  
             pz = params.get(f'pz_{sufijo}', 0)
             return lookup_idx.get((familia, tf, res, metrica_raw, pz))
+
+        def _lab_censo(study, dir_, fold):
+            """[CENSO-F3] Una fila por prueba del estudio (completas, podadas y fallidas). Solo lee la base y vuelve a simular IS las completas."""
+            filas = []
+            for t in study.get_trials(deepcopy=False):
+                p = dict(t.params)
+                f = {'Simbolo': SIMBOLO_A_EVALUAR, 'Fold': fold + 1, 'Dir': dir_, 'Trial': t.number, 'Estado': t.state.name,
+                     'Azar': bool(t.number < STARTUP_TRIALS), 'Valor_Optuna': (float(t.value) if t.value is not None else np.nan),
+                     'Metrica_F3': LAB_METRICA}
+                for k in sorted(p): f['p_' + k] = p[k]
+                try: i_in = _resolver_idx_desde_params(p, 'in'); i_out = _resolver_idx_desde_params(p, 'out')
+                except KeyError: i_in = i_out = None
+                f['BASE_IN'] = nombres_bases[i_in] if i_in is not None else ''; f['ACUM_IN'] = nombres_metricas[i_in] if i_in is not None else ''
+                f['BASE_OUT'] = nombres_bases[i_out] if i_out is not None else ''; f['ACUM_OUT'] = nombres_metricas[i_out] if i_out is not None else ''
+                if t.state == TrialState.COMPLETE and i_in is not None and i_out is not None and i_in != i_out:
+                    if dir_ == 'L':
+                        mfe, mae, prof, tsc = simular_motor_long_T(
+                            signos_train[:, i_in], extremo_train[:, i_in], sat_inf_train[:, i_in], acum_train[:, i_in],
+                            signos_train[:, i_out], extremo_train[:, i_out], sat_sup_train[:, i_out], acum_train[:, i_out],
+                            opens_train, highs_train, lows_train, phantom_train, PIPS_MULT, TRAIN_LEN, p['armado_in'], p['chasquido_in'], p['armado_out'], p['chasquido_out'], np.float32(SPREAD_ACTIVO))
+                    else:
+                        mfe, mae, prof, tsc = simular_motor_short_T(
+                            signos_train[:, i_in], extremo_train[:, i_in], sat_sup_train[:, i_in], acum_train[:, i_in],
+                            signos_train[:, i_out], extremo_train[:, i_out], sat_inf_train[:, i_out], acum_train[:, i_out],
+                            opens_train, highs_train, lows_train, phantom_train, PIPS_MULT, TRAIN_LEN, p['armado_in'], p['chasquido_in'], p['armado_out'], p['chasquido_out'], np.float32(SPREAD_ACTIVO))
+                    r6 = eval_robustez_numba_v6(mfe, mae, prof, tsc, MIN_OPS_IS_REPORTE)
+                    f.update({'Ops_IS': int(len(prof)), 'Pips_IS': round(float(np.sum(prof)), 2), 'PF_IS': round(float(r6[7]), 4), 'WR_IS': round(float(r6[6]), 2),
+                              'SF_IS': round(float(r6[0]), 4), 'V52_IS': round(float(eval_robustez_numba_v5_lab(mfe.copy(), mae.copy(), prof.copy(), MIN_OPS_IS_REPORTE)[0]), 4)})
+                filas.append(f)
+            return filas
 
         # ==================== MÁQUINA C++ VECTOR _ COMPRAS (LONG) OPTUNA ====================
         def objective_long(trial):
@@ -1025,6 +1067,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
             if rank > TOP_REPORTE: break
 
         if LAB_V7: resultados_optuna.extend(_lab_filas_v7(completed_trials_L, 'L', fold, '🟢 LONG', study_name_L, study_L))
+        if LAB_F3_CENSO and not LAB_MEDIR: censo_f3.extend(_lab_censo(study_L, 'L', fold))   # [CENSO-F3]
         if LAB_MEDIR: lab_resumen_tiempos(study_L, f"LONG {SIMBOLO_A_EVALUAR} fold {fold+1}", N_JOBS)
         del study_L, storage_master_L; gc.collect()
         # 🛡️ [FIX M3] Liberación explícita de archivos SQLite en /dev/shm para prevenir saturación de tmpfs
@@ -1156,6 +1199,7 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
             if rank > TOP_REPORTE: break
 
         if LAB_V7: resultados_optuna.extend(_lab_filas_v7(completed_trials_S, 'S', fold, '🔴 SHORT', study_name_S, study_S))
+        if LAB_F3_CENSO and not LAB_MEDIR: censo_f3.extend(_lab_censo(study_S, 'S', fold))   # [CENSO-F3]
         if LAB_MEDIR: lab_resumen_tiempos(study_S, f"SHORT {SIMBOLO_A_EVALUAR} fold {fold+1}", N_JOBS)
         del study_S, storage_master_S; gc.collect()
         # 🛡️ [FIX M3] Liberación explícita de archivos SQLite en /dev/shm para prevenir saturación de tmpfs
@@ -1180,6 +1224,15 @@ for SIMBOLO_A_EVALUAR in LISTA_SIMBOLOS:
         print(f"✅ V5.9 Árbol Dimensional Extenso Condicional (T-Score_Hpc) P3 completado -> 💾 : {nombre_archivo}")
     else: print(f"⚠️ {SIMBOLO_A_EVALUAR}: Poda completa bajo métrica T-Score Asintótico IA. Densidad IS OOS Insuficiente. ")
 
+    if censo_f3:   # [CENSO-F3] todas las pruebas de los 4 grupos (fold x dirección); Fase 4 no lo lee
+        df_censo = pd.DataFrame(censo_f3)
+        for _k, _v in TAB.sello(N_total).items(): df_censo[_k] = _v
+        for _k, _v in sello_busqueda().items(): df_censo[_k] = _v
+        nombre_censo = f"Censo_Fase3_{SIMBOLO_A_EVALUAR}{SUF_CSV_LAB}.csv.gz"
+        df_censo.to_csv(nombre_censo + ".tmp", index=False, compression='gzip'); os.replace(nombre_censo + ".tmp", nombre_censo)
+        print(f"🧾 [CENSO-F3] {len(df_censo)} pruebas -> {nombre_censo}")
+        del df_censo
+    del censo_f3   # [CENSO-F3]
     del df_reporte, resultados_optuna; gc.collect()
     if LAB_MEDIR:
         print(f"\n⏱️ [LAB-V7 MEDIR] medición completada con {SIMBOLO_A_EVALUAR} (fold 1); se detiene."); break

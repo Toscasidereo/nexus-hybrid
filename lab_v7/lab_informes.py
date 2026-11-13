@@ -46,7 +46,7 @@ def _seguro(defecto):
 def reloj():
     return time.perf_counter()
 R_NOMBRES = ('score', 'med_mfe', 'med_mae', 'med_pips', 'efic', 'ratio_mfe_mae', 'wr', 'pf', 'maxdd', 'rf', 'n', 'sortino', 'med_T')
-EXTRAS = ('sf', 'v7', 'pips', 'C1', 'C2', 'C3', 'C4', 'alfa', 'n_sen')
+EXTRAS = ('sf', 'v7', 'v52', 'pips', 'C1', 'C2', 'C3', 'C4', 'alfa', 'n_sen')   # [JUEZ-V52] 'v52' (2026-11-13)
 ETAPAS = ('1_preparacion', '2_ridge1', '3_tamano', '4_base_is', '5_ridge2', '6_compuerta_oos')
 BLOQUES = ('is_base', 'is_sup', 'oos_base', 'oos_sup')
 COLS_ID = ['simbolo', 'dir', 'fold', 'rank_f3', 'idx_f3', 'base_in', 'acum_in', 'arm_in', 'chq_in', 'base_out', 'acum_out', 'arm_out', 'chq_out']

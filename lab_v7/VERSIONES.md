@@ -25,7 +25,9 @@ Cómo saber en qué rama estás: `git branch --show-current`. Cómo ver solo lo 
 **Sin cambios respecto de lab-v7 (son de v7):**
 `Fase_3_lab.py` · `lab_escala.py` · `v7_metricas.py` · `v7_pruebas.py` · `v7_pruebas_resultados.json` · `vida_pruebas.py` · `vida_pruebas_resultados.json` · `correr_lab.sh` · `correr_f3_lab.sh` · `ESPECIFICACION_VIDA_V3.md`
 
-Nota: Fase 3 no cambia en v8. Las reformas de v8 empiezan en Fase 4.
+Nota (2026-11-08): Fase 3 no cambiaba en v8; las reformas empezaban en Fase 4.
+
+**Actualización 2026-11-13:** `Fase_3_lab.py` pasa a "modificado en v8" (F3-V52: `NEXUS_LAB_METRICA=v52`; CENSO-F3: `NEXUS_LAB_F3_CENSO`). `Fase_4_lab.py` y `lab_informes.py` agregan JUEZ-V52 (`NEXUS_LAB_F3=v52`, `NEXUS_LAB_METRICA=v52`). Fase 4.5 A/B no se adaptan: con v52 el corredor corre solo Fase 4. Pruebas L21–L23 en `lab_pruebas.py`.
 
 *Medido con `git diff --name-status origin/lab-v7 origin/lab-v8` (2026-11-08). Esta lista es una instantánea: cuando una rama cambie, se actualiza o se regenera con ese comando.*
 

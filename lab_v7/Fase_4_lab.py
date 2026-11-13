@@ -3,6 +3,13 @@
 # ⚡ HPC THREAD-POOL CON AUTOCALIBRACIÓN DE RAM (cgroup-aware) | SPREADS DINÁMICOS
 # 🎯 INTEGRACIÓN TOTAL TABLERO ÚNICO + PARIDAD ACTIVA EA DUAL V12.01+
 # ==============================================================================
+# 📋 BITÁCORA LAB-V8 V0.4 (2026-11-13) — JUEZ-V52 EN FASE 4 (rama lab-v8). Orden del CRO: "trabajemos sobre la rama lab v8 ... apliquemos los cambios solo en fase 3 y 4".
+#      • NEXUS_LAB_F3 = v52: lee Reporte_Fase3_WFO_V5.8_{SIMBOLO}_MV52.csv (salida de Fase_3_lab con METRICA=v52) y exige Metrica_F3 == 'v52'.
+#      • NEXUS_LAB_METRICA = v52: r[0] (el puntaje) = evaluador de Fase 3 V5.2 (copia literal idéntica a la de Fase_3_lab, prueba L23) en:
+#        gate de la base IS, escaneo de K (elige el K de mayor V5.2 IS), puntaje OOS, ClaveRank/Score_flujo. Resto de r[...] = v6 (como F3-V52).
+#        El informe guarda además 'sf' (v6) y 'v52' de los mismos trades. Etiquetas de archivos: _MV52 / _F3V52.
+#      • Fase 4.5 A/B NO se adaptan (decisión del CRO): con METRICA=v52 o F3=v52 el corredor corre solo Fase 4.
+#      • Defecto (final / main) y v7: nada cambia (prueba L23 bit a bit).
 # 📋 BITÁCORA LAB-V8 V0.3 (2026-11-10) — INFORMES DE FASE 4 (rama lab-v8; `main` y lab-v7 intactos). Orden del CRO: "LUZ VERDE: INFORMES FASE 4 (censo, resumen, manifiesto)"
 #      más un archivo acotado para lectura directa. Requisito del CRO: informes auditables, trazables y utilizables por dos lectores (el CRO y el sistema).
 #      • Interruptor nuevo NEXUS_LAB_CENSO = 0 | 1 (defecto del código 0 = comportamiento anterior, sin archivos nuevos; el tablero lo pone en 1) y NEXUS_LAB_VISTA_TOP (defecto 50).
@@ -352,7 +359,7 @@ MIN_OPS_OOS_EXPORT = 30
 
 CANDIDATOS_K_ABORTAR = np.array([0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50], dtype=np.float64)
 
-PATRON_CSV_FASE3 = "Reporte_Fase3_WFO_V5.8_{simbolo}" + ("_MV7" if os.environ.get("NEXUS_LAB_F3", "main") == "v7" else "") + ".csv"   # LAB-V7 V0.5: NEXUS_LAB_F3=v7 lee la salida de Fase_3_lab.py
+PATRON_CSV_FASE3 = "Reporte_Fase3_WFO_V5.8_{simbolo}" + ({"v7": "_MV7", "v52": "_MV52"}.get(os.environ.get("NEXUS_LAB_F3", "main"), "")) + ".csv"   # LAB-V7 V0.5: NEXUS_LAB_F3=v7 lee la salida de Fase_3_lab.py
 
 RANKEAR_SOLO_IS = True
 PERMITIR_PHANTOM_AUSENTE = False
@@ -391,20 +398,20 @@ LAB_VISTA_TOP = int(os.environ.get('NEXUS_LAB_VISTA_TOP', '') or 50)  # [LAB-V8 
 if LAB_CENSO: import lab_informes as INF
 LAB_METRICA = os.environ.get('NEXUS_LAB_METRICA', 'final')       # 'final' = Score_final (main) | 'v7' = Score_v7 en la selección
 LAB_F3 = os.environ.get('NEXUS_LAB_F3', 'main')   # CSV de Fase 3 que se lee: 'main' (el de siempre) | 'v7' (el de Fase_3_lab.py con NEXUS_LAB_METRICA=v7, sufijo _MV7)
-assert LAB_F3 in ('main', 'v7'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
+assert LAB_F3 in ('main', 'v7', 'v52'), f"NEXUS_LAB_F3 invalido: {LAB_F3}"
 assert LAB_TAMANO in ('off', 'A', 'B'), f"NEXUS_LAB_TAMANO invalido: {LAB_TAMANO}"
 assert LAB_CIERRE in ('T_terminal', 'dT_cont', 'G_pips', 'V3', 'dV3'), f"NEXUS_LAB_CIERRE invalido: {LAB_CIERRE}"
 assert LAB_T in ('T', 'V3'), f"NEXUS_LAB_T invalido: {LAB_T}"
 assert LAB_VIDA in ('3.0', '3.1'), f"NEXUS_LAB_VIDA invalido: {LAB_VIDA}"
 LAB_USA_VIDA = (LAB_T == 'V3') or (LAB_CIERRE in ('V3', 'dV3'))   # [LAB-V8] ¿se calcula Vida v3 en esta corrida?
-assert LAB_METRICA in ('final', 'v7'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
+assert LAB_METRICA in ('final', 'v7', 'v52'), f"NEXUS_LAB_METRICA invalido: {LAB_METRICA}"
 LAB_ACTIVO = (LAB_TAMANO != 'off') or (LAB_CIERRE != 'T_terminal') or LAB_NULO or (LAB_METRICA != 'final') or (LAB_F3 != 'main') or (LAB_T != 'T') or (LAB_VIDA != '3.0')
 LAB_V7_OPCION = 'A'      # alfa neutral a la deriva local (opción A de la propuesta)   [DEFAULT / CRO-OVERRIDE]
 LAB_V7_R = 20            # réplicas del gemelo de captura (C3)                          [DEFAULT / CRO-OVERRIDE]
 ACT_VENTANA = 60
 ESCALA_MIN, ESCALA_MAX = 0.25, 4.0
 PERCENTILES_K_LAB = np.arange(0, 55, 5)
-TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_TV3" if LAB_T == "V3" else "") + ("_VID31" if (LAB_VIDA == "3.1" and LAB_USA_VIDA) else "") + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
+TAG_ARCHIVOS = f"PROD_V12_{ESCALON}" + (f"_LAB_{LAB_TAMANO}_{LAB_CIERRE}" + ("_MV7" if LAB_METRICA == "v7" else "") + ("_MV52" if LAB_METRICA == "v52" else "") + ("_F3V7" if LAB_F3 == "v7" else "") + ("_F3V52" if LAB_F3 == "v52" else "") + ("_TV3" if LAB_T == "V3" else "") + ("_VID31" if (LAB_VIDA == "3.1" and LAB_USA_VIDA) else "") + ("_NULO" if LAB_NULO else "") if LAB_ACTIVO else "")   
 COLS_REQ_FASE3 = ['Dir', 'Fold', 'Rank', '⚖️ BASE IN', '📊 ACUM IN', '⚙️ Arm_IN', '⚡ Chq_IN', '⚖️ BASE OUT', '📊 ACUM OUT', '⚙️ Arm_OUT', '⚡ Chq_OUT']
 MARCOS_VALIDOS = ('Fast', 'Mid', 'Slow')
 
@@ -1418,6 +1425,93 @@ def simular_motor_short_superv_T_ix(
 # 🚀 4. ESCANEO DE K_ABORTAR — VÍA SIMULADOR REAL, IS-ONLY
 # ==========================================================
 
+# ---------------------------------------------------------------- [JUEZ-V52] evaluador de Fase 3 V5.2
+# Copia LITERAL del bloque de Fase_3_lab.py (que a su vez copia el notebook V5.2); L23 comprueba que el texto es idéntico.
+@njit(cache=True, fastmath=True, boundscheck=False, nogil=True)   # solo Python (puntaje de búsqueda): fastmath permitido (§2.4)
+def eval_robustez_numba_v5_lab(mfe_lst, mae_lst, prof_lst, min_trades):
+    n = len(prof_lst)
+    if n < min_trades:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    sum_prof = 0.0; sum_neg_sq = 0.0; ganadores = 0
+    sum_ganancias = 0.0; perdedores_sum = 0.0
+    cum_equity = 0.0; peak = 0.0; max_dd = 0.0
+
+    for i in range(n):
+        p = prof_lst[i]
+        sum_prof += p
+        if p > 0:
+            ganadores += 1; sum_ganancias += p
+        else:
+            perdedores_sum += np.abs(p); sum_neg_sq += p * p
+        cum_equity += p
+        if cum_equity > peak: peak = cum_equity
+        dd = peak - cum_equity
+        if dd > max_dd: max_dd = dd
+
+    prof_lst.sort()
+    mfe_lst.sort()
+    mae_lst.sort()
+
+    if n % 2 == 1:
+        med_prof = prof_lst[n // 2]
+        med_mfe = mfe_lst[n // 2]
+        med_mae = mae_lst[n // 2]
+    else:
+        med_prof = (prof_lst[(n // 2) - 1] + prof_lst[n // 2]) / 2.0
+        med_mfe = (mfe_lst[(n // 2) - 1] + mfe_lst[n // 2]) / 2.0
+        med_mae = (mae_lst[(n // 2) - 1] + mae_lst[n // 2]) / 2.0
+
+    if med_prof <= 0.05 or sum_ganancias <= perdedores_sum or med_mfe <= 0.0:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+    avg_prof = sum_prof / n
+    win_rate = (ganadores / n) * 100.0
+    pf = sum_ganancias / (perdedores_sum + 0.01)
+
+    efic = (med_prof / med_mfe) * 100.0
+    ratio_mfe_mae = med_mfe / (np.abs(med_mae) + 0.01)
+
+    downside_std = np.sqrt(sum_neg_sq / max(n, 1))
+    if downside_std < 0.01: downside_std = 0.01
+
+    sortino = avg_prof / downside_std
+
+    if max_dd > 0.0: rf = cum_equity / max_dd
+    elif max_dd == 0.0 and cum_equity > 0.0: rf = 8.0
+    else: rf = 0.0
+
+    s_sortino = min(max(sortino, 0.0) / 2.5, 1.0)
+    s_rf      = min(max(rf, 0.0) / 4.0, 1.0)
+    s_pf      = min(max(pf - 1.0, 0.0) / 1.0, 1.0)
+    s_mfe     = min(max(ratio_mfe_mae, 0.0) / 3.0, 1.0)
+    s_wr      = win_rate / 100.0
+
+    n_factor = min(np.sqrt(n) / np.sqrt(min_trades), 1.0)
+
+    score_base = (s_sortino * 35.0) + (s_rf * 25.0) + (s_pf * 20.0) + (s_mfe * 10.0) + (s_wr * 10.0)
+    score_final = score_base * n_factor
+
+    return score_final, med_mfe, med_mae, med_prof, efic, ratio_mfe_mae, win_rate, pf, max_dd, rf, n, sortino
+
+def lab_v52_r(mfe, mae, prof, tsc, min_trades):
+    """[JUEZ-V52] (r, ex): r = vector de eval_robustez_numba_v6 con r[0] = puntaje V5.2 (sobre copias); ex = {'sf': v6, 'v52': V5.2}."""
+    r = eval_robustez_numba_v6(mfe, mae, prof, tsc, min_trades)
+    v52 = float(eval_robustez_numba_v5_lab(mfe.copy(), mae.copy(), prof.copy(), min_trades)[0])
+    return (v52,) + tuple(r[1:]), {'sf': float(r[0]), 'v52': v52, 'v7': float('nan')}
+
+
+def lab_escanear_k_v52(sim_is, W_S, B_S, candidatos_k, min_trades):
+    """[JUEZ-V52] Igual que escanear_umbral_k, eligiendo el K de mayor puntaje V5.2 IS."""
+    mejor_score = 0.0; mejor_k = None; mejor_r = None; mejor_ex = {'sf': float('nan'), 'v52': float('nan'), 'v7': float('nan')}
+    for K in candidatos_k:
+        mfe, mae, prof, tsc = sim_is(True, W_S, B_S, float(K))
+        r, ex = lab_v52_r(mfe, mae, prof, tsc, min_trades)
+        if r[0] > mejor_score:
+            mejor_score = r[0]; mejor_k = float(K); mejor_r = r; mejor_ex = ex
+    return mejor_k, mejor_r, mejor_ex
+
+
 def escanear_umbral_k(sim_is, W_S, B_S, candidatos_k, min_trades):
     mejor_score = 0.0; mejor_k = None; mejor_r = None
     for K in candidatos_k:
@@ -1805,6 +1899,10 @@ def procesar_simbolo(SIMBOLO):
         print(f"   ⛔ [{SIMBOLO}] CSV de Fase 3 sin columnas requeridas {_faltan}. Símbolo saltado.")
         _registrar_descarte(SIMBOLO, "ALL", "CSV_Fase3_columnas_faltantes")
         return 'csv_invalido'
+    if LAB_F3 == 'v52' and not ('Metrica_F3' in df_opt.columns and (df_opt['Metrica_F3'].astype(str) == 'v52').all()):   # [JUEZ-V52]
+        print(f"   ⛔ [{SIMBOLO}] NEXUS_LAB_F3=v52 pero el CSV no trae Metrica_F3='v52' en todas las filas. Símbolo saltado.")
+        _registrar_descarte(SIMBOLO, "ALL", "CSV_Fase3_metrica_no_v52")
+        return 'csv_invalido'
     df_long = df_opt[df_opt['Dir'].str.contains('LONG')]; df_short = df_opt[df_opt['Dir'].str.contains('SHORT')]
     if df_long.empty or df_short.empty:
         print(f"   ⚠️ [{SIMBOLO}] CSV de Fase 3 sin candidatos LONG y/o SHORT. Símbolo saltado.")
@@ -2000,6 +2098,10 @@ def procesar_simbolo(SIMBOLO):
                         return lab_eval_v7(tup, dir_code_lab, opens_arr[a:b], highs_arr[a:b], lows_arr[a:b], PIPS_MULT, SPREAD_ACTIVO,
                                            1, 0.0, min_tr, min_tr, seed_lab)
                     mfe, mae, prof, tsc = run_sim(a, b, phantom, activar_superv, W_S, B_S, K)
+                    if LAB_METRICA == 'v52':   # [JUEZ-V52]
+                        r, _e = lab_v52_r(mfe, mae, prof, tsc, min_tr)
+                        if LAB_CENSO: _e['pips'] = float(np.sum(prof))
+                        return r, _e
                     r = eval_robustez_numba_v6(mfe, mae, prof, tsc, min_tr)
                     _e = {'sf': float(r[0]), 'v7': float('nan')}
                     if LAB_CENSO: _e['pips'] = float(np.sum(prof))   # [LAB-V8 informes]
@@ -2045,6 +2147,8 @@ def procesar_simbolo(SIMBOLO):
                     K_opt, r_k_is, _ex_is = lab_escanear_k_v7(lambda act, k: run_sim(start_train, end_train, phantom_train, act, W_S, B_S, k, sim_ix_func),
                                                               GRID_K, dir_code_lab, opens_arr[start_train:end_train], highs_arr[start_train:end_train],
                                                               lows_arr[start_train:end_train], PIPS_MULT, SPREAD_ACTIVO, MIN_OPS_IS_LAB, seed_lab)
+                elif LAB_METRICA == 'v52':   # [JUEZ-V52]
+                    K_opt, r_k_is, _ex_is = lab_escanear_k_v52(sim_is, W_S, B_S, GRID_K, MIN_OPS_IS_LAB)
                 else:
                     K_opt, r_k_is = escanear_umbral_k(sim_is, W_S, B_S, GRID_K, MIN_OPS_IS_LAB)
                     _ex_is = {'sf': float(r_k_is[0]) if K_opt is not None else float('nan'), 'v7': float('nan')}
